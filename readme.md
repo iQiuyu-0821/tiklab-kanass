@@ -280,7 +280,7 @@ Kanass 支持多种项目模型，拥有强大的事项跟踪与管理功能，�
 * 启动项目
 
   ```
-  1. git clone 
+  1. git clone https://github.com/tiklab-project/tiklab-kanass.git
   2. cd tiklab-Kanass
   3. 构建：
       MAC系统：mvn clean package -P system-mac,env-dev
