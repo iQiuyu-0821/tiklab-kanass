@@ -5,7 +5,7 @@ import io.tiklab.toolkit.beans.annotation.Mapping;
 import io.tiklab.toolkit.beans.annotation.Mappings;
 import io.tiklab.core.BaseModel;
 import io.tiklab.toolkit.join.annotation.Join;
-import io.tiklab.toolkit.join.annotation.JoinQuery;
+import io.tiklab.toolkit.join.annotation.JoinField;
 import io.tiklab.postin.annotation.ApiModel;
 import io.tiklab.postin.annotation.ApiProperty;
 import io.tiklab.kanass.sprint.model.Sprint;
@@ -66,7 +66,7 @@ public class Project extends BaseModel{
     @Mappings({
             @Mapping(source = "projectType.id",target = "projectTypeId")
     })
-    @JoinQuery(key = "id")
+    @JoinField(key = "id")
     private ProjectType projectType;
 
     /**
@@ -76,7 +76,7 @@ public class Project extends BaseModel{
     @Mappings({
             @Mapping(source = "master.id",target = "master")
     })
-    @JoinQuery(key = "id")
+    @JoinField(key = "id")
     private User master;
 
     /**
@@ -94,6 +94,13 @@ public class Project extends BaseModel{
     private java.lang.String projectSetId;
 
     /**
+     * @pi.name: productId
+     * @pi.value: productId
+     */
+    @ApiProperty(name = "productId",desc = "产品")
+    private java.lang.String productId;
+
+    /**
      * @pi.name: startTime
      * @pi.value: 2023-01-01 12:00:00
      */
@@ -107,15 +114,21 @@ public class Project extends BaseModel{
     @ApiProperty(name="endTime",desc="结束时间")
     private Date endTime;
 
+    @ApiProperty(name="createTime",desc="创建时间")
+    private Date createTime;
+
+    @ApiProperty(name="updateTime",desc="更新时间")
+    private Date updateTime;
+
     /**
      * @pi.name: projectState
-     * @pi.value: 1: 未完成
+     * @pi.value: 1: 未完成   2:进行中   3：已结束
      */
     @ApiProperty(name="projectState",desc="项目状态")
     private java.lang.String projectState;
 
     @ApiProperty(name="percent",desc="完成率")
-    private int percent;
+    private float percent;
 
     @ApiProperty(name="workItemNumber",desc="事项数量")
     private int workItemNumber;
@@ -134,6 +147,19 @@ public class Project extends BaseModel{
 
     @ApiProperty(name="iconUrl",desc="项目类型icon")
     private java.lang.String iconUrl;
+
+    @ApiProperty(name="estimateTime",desc="计划工时")
+    private Integer estimateTime;
+
+    @ApiProperty(name="surplusTime",desc="剩余工时")
+    private Integer surplusTime;
+
+    @ApiProperty(name="color",desc="项目颜色")
+    private int color;
+
+    private boolean deletePermission;
+
+    private boolean updatePermission;
 
     public String getId() {
         return id;
@@ -207,6 +233,14 @@ public class Project extends BaseModel{
         this.projectSetId = projectSetId;
     }
 
+    public String getProductId() {
+        return productId;
+    }
+
+    public void setProductId(String productId) {
+        this.productId = productId;
+    }
+
     public Date getStartTime() {
         return startTime;
     }
@@ -231,11 +265,11 @@ public class Project extends BaseModel{
         this.projectState = projectState;
     }
 
-    public int getPercent() {
+    public float getPercent() {
         return percent;
     }
 
-    public void setPercent(int percent) {
+    public void setPercent(float percent) {
         this.percent = percent;
     }
 
@@ -285,5 +319,61 @@ public class Project extends BaseModel{
 
     public void setIconUrl(String iconUrl) {
         this.iconUrl = iconUrl;
+    }
+
+    public Integer getEstimateTime() {
+        return estimateTime;
+    }
+
+    public void setEstimateTime(Integer estimateTime) {
+        this.estimateTime = estimateTime;
+    }
+
+    public Integer getSurplusTime() {
+        return surplusTime;
+    }
+
+    public void setSurplusTime(Integer surplusTime) {
+        this.surplusTime = surplusTime;
+    }
+
+    public int getColor() {
+        return color;
+    }
+
+    public void setColor(int color) {
+        this.color = color;
+    }
+
+    public Date getCreateTime() {
+        return createTime;
+    }
+
+    public void setCreateTime(Date createTime) {
+        this.createTime = createTime;
+    }
+
+    public Date getUpdateTime() {
+        return updateTime;
+    }
+
+    public void setUpdateTime(Date updateTime) {
+        this.updateTime = updateTime;
+    }
+
+    public boolean isDeletePermission() {
+        return deletePermission;
+    }
+
+    public void setDeletePermission(boolean deletePermission) {
+        this.deletePermission = deletePermission;
+    }
+
+    public boolean isUpdatePermission() {
+        return updatePermission;
+    }
+
+    public void setUpdatePermission(boolean updatePermission) {
+        this.updatePermission = updatePermission;
     }
 }

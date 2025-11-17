@@ -35,7 +35,7 @@ public interface ModuleService {
     * 删除模块
     * @param id
     */
-    void deleteModule(@NotNull String id);
+    Boolean deleteModule(@NotNull String id);
 
     @FindOne
     Module findOne(@NotNull String id);
@@ -78,4 +78,10 @@ public interface ModuleService {
      */
     Pagination<Module> findModulePage(ModuleQuery moduleQuery);
 
+    /**
+     * 测试模块树结构
+     * @param moduleQuery
+     * @return
+     */
+    List<Module> findCaseModuleListTree(ModuleQuery moduleQuery);
 }

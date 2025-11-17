@@ -2,11 +2,14 @@ package io.tiklab.kanass.project.jira.service;
 
 import io.tiklab.core.exception.ApplicationException;
 import io.tiklab.dal.jpa.JpaTemplate;
+import io.tiklab.dfs.client.DfsClient;
+import io.tiklab.dfs.common.model.object.PutRequest;
 import io.tiklab.eam.common.context.LoginContext;
 import io.tiklab.flow.flow.service.DmFlowService;
 import io.tiklab.flow.statenode.model.StateNodeFlow;
 import io.tiklab.flow.statenode.service.StateNodeFlowService;
 import io.tiklab.form.field.model.SelectItem;
+import io.tiklab.kanass.common.ErrorCode;
 import io.tiklab.kanass.project.module.model.Module;
 import io.tiklab.kanass.project.module.service.ModuleService;
 import io.tiklab.kanass.project.project.model.Project;
@@ -33,7 +36,7 @@ import io.tiklab.user.dmUser.model.DmUserQuery;
 import io.tiklab.user.dmUser.service.DmUserService;
 import io.tiklab.user.user.model.User;
 import io.tiklab.user.user.model.UserQuery;
-import io.tiklab.user.user.service.UserService;
+import io.tiklab.user.user.service.UserProcessor;
 import org.apache.commons.lang.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -43,12 +46,16 @@ import org.springframework.transaction.annotation.EnableTransactionManagement;
 import org.springframework.util.ObjectUtils;
 import org.w3c.dom.Element;
 
+import javax.annotation.PostConstruct;
+import java.io.*;
+import java.nio.file.Paths;
 import java.sql.Date;
 import java.text.SimpleDateFormat;
 import java.util.*;
+import java.util.stream.Collectors;
 
 /**
- * jira 数据导入服务
+ * jira 数据导入线下9.4 版本的jira数据
  */
 @Service
 @EnableTransactionManagement
@@ -97,7 +104,7 @@ public class JiraImportData94ServiceImpl implements JiraImportData94Service {
     WorkTypeDmService workTypeDmService;
 
     @Autowired
-    UserService userService;
+    UserProcessor userProcessor;
 
     @Autowired
     DmFlowService dmFlowService;
@@ -105,9 +112,26 @@ public class JiraImportData94ServiceImpl implements JiraImportData94Service {
     @Autowired
     StateNodeFlowService stateNodeFlowService;
 
+    @Autowired
+    WorkAttachService workAttachService;
 
-    @Value("${unzip.path}")
+
+    @Value("${DATA_HOME}")
+    String dataHome;
+
     String unzipAddress;
+
+    String attachmentAddress;
+
+    @PostConstruct
+    public void init(){
+        this.unzipAddress = Paths.get(dataHome, "unzip", "Jira").toString();
+        this.attachmentAddress = Paths.get(unzipAddress, "attachments").toString();
+    }
+
+    @Autowired
+    private DfsClient dfsClient;
+
     private ThreadLocal<ArrayList<Element>> GlobalUserElementList = new ThreadLocal<>();
 
     private ThreadLocal<ArrayList<Element>> GlobalApplicationUserElementList = new ThreadLocal<>();
@@ -133,13 +157,20 @@ public class JiraImportData94ServiceImpl implements JiraImportData94Service {
     private ThreadLocal<ArrayList<Element>> CustomFieldElementList = new ThreadLocal<>();
     private ThreadLocal<ArrayList<Element>>  ChangeGroupElementList = new  ThreadLocal<>();
 
+    private ThreadLocal<ArrayList<Element>> NodeAssociationList = new ThreadLocal<>();
+
+    // 附件信息
+    private ThreadLocal<ArrayList<Element>> FileAttachmentList = new ThreadLocal<>();
+
     private ThreadLocal<Map<String, Object>> ImportSchedule = new ThreadLocal<Map<String, Object>>();
 
     public static Map<String, Integer> Percent = new HashMap();
 
     @Override
-    public String writeData(List<Element> elements, Map<String, Project> CurrentProject, Map<String, Integer> Percent) {
+    public String writeData(List<Element> elements, Map<String, String> Step, Map<String, Project> CurrentProject, Map<String, Integer> Percent) throws InterruptedException {
         String createUserId = LoginContext.getLoginId();
+        Step.put("step1", "process");
+        Thread.sleep(2000);
         try {
 
             ArrayList<Element> globalUserElementList = new ArrayList<>();
@@ -176,6 +207,10 @@ public class JiraImportData94ServiceImpl implements JiraImportData94Service {
             ArrayList<String> processStatusIds = new ArrayList<>();
 
             ArrayList<String> doneStatusIds = new ArrayList<>();
+
+            ArrayList<Element> nodeAssociationList = new ArrayList<>();
+
+            ArrayList<Element> fileAttachmentList = new ArrayList<>();
 
             for (Element element : elements) {
                 String name = element.getTagName();
@@ -258,10 +293,19 @@ public class JiraImportData94ServiceImpl implements JiraImportData94Service {
                                 break;
                         }
                         break;
+                    case "NodeAssociation":
+                        nodeAssociationList.add(element);
+                        break;
+                    case "FileAttachment":
+                        fileAttachmentList.add(element);
+                        break;
                     default:
                         break;
                 }
             }
+
+            Step.put("step2", "process");
+            Thread.sleep(1500);
 
 
             this.GlobalUserElementList.set(globalUserElementList);
@@ -285,6 +329,9 @@ public class JiraImportData94ServiceImpl implements JiraImportData94Service {
 
             ArrayList<Element> sprintCustomField = getSprintCustomField(customFieldValueElementList);
             this.CustomFieldValueElementList.set(sprintCustomField);
+            this.NodeAssociationList.set(nodeAssociationList);
+
+            this.FileAttachmentList.set(fileAttachmentList);
 
             for (Element globalUserElement : this.GlobalUserElementList.get()) {
                 setGlobalUser(globalUserElement);
@@ -311,6 +358,8 @@ public class JiraImportData94ServiceImpl implements JiraImportData94Service {
             this.ComponentElementList.remove();
             this.SprintElementList.remove();
             this.CustomFieldElementList.remove();
+            this.NodeAssociationList.remove();
+            this.FileAttachmentList.remove();
             return "succed";
         } catch (Exception e) {
             throw new ApplicationException(e);
@@ -352,28 +401,56 @@ public class JiraImportData94ServiceImpl implements JiraImportData94Service {
         String active = element.getAttribute("active");
         String id = element.getAttribute("id");
         if(active.equals("1")){
-            String userName = element.getAttribute("displayName");
+            String userName = element.getAttribute("userName");
             String emailAddress = element.getAttribute("emailAddress");
+            String nickName = element.getAttribute("displayName");
             UserQuery userQuery = new UserQuery();
             userQuery.setEmail(emailAddress);
-            List<User> userList = userService.findUserList(userQuery);
-
+            List<User> emailUserList = userProcessor.findUserList(userQuery);
+            userQuery = new UserQuery();
+            userQuery.setName(userName);
+            List<User> nameUserList = userProcessor.findUserList(userQuery);
 
                 try {
                     String userId = new String();
-                    if(ObjectUtils.isEmpty(userList)){
+                    if(ObjectUtils.isEmpty(emailUserList) && ObjectUtils.isEmpty(nameUserList)){
                         User user = new User();
-                        user.setNickname(userName);
+                        user.setNickname(nickName);
                         user.setName(userName);
                         user.setEmail(emailAddress);
                         user.setStatus(1);
                         user.setDirId("1");
                         user.setPassword("123456");
                         user.setType(0);
-                        userId = userService.createUser(user);
+                        userId = userProcessor.createUser(user);
                     }else {
-                        User user = userList.get(0);
-                        userId = user.getId();
+                        User user = new User();
+                        user.setNickname(nickName);
+                        user.setStatus(1);
+                        user.setDirId("1");
+                        user.setPassword("123456");
+                        user.setType(0);
+
+                        // 有重名或重电子邮件地址的用户
+                        if (!ObjectUtils.isEmpty(emailUserList) && !ObjectUtils.isEmpty(nameUserList)){
+                            // 两个都重复
+                            user.setName(userName + "_jira");
+                            user.setEmail(emailAddress + "_jira");
+                        }else if (!ObjectUtils.isEmpty(emailUserList)){
+                            // email重复
+                            user.setName(userName);
+                            user.setEmail(emailAddress + "_jira");
+                        }else {
+                            // name重复
+                            user.setName(userName + "_jira");
+                            user.setEmail(emailAddress);
+                        }
+                        userId = userProcessor.createUser(user);
+
+
+//                        原本的逻辑相当于合并两个系统的用户
+//                        User user = userList.get(0);
+//                        userId = user.getId();
                     }
                     element.setAttribute("newId", userId);
                     ArrayList<Element> globalApplicationUserElementList = this.GlobalApplicationUserElementList.get();
@@ -386,7 +463,7 @@ public class JiraImportData94ServiceImpl implements JiraImportData94Service {
                     }
                     System.out.println( element.getAttribute("newId"));
                 }catch (Exception e){
-                    throw new ApplicationException(2000,"成员添加失败" + e.getMessage());
+                    throw new ApplicationException(ErrorCode.CREATE_ERROR,"成员添加失败" + e.getMessage());
                 }
             }
     }
@@ -446,7 +523,7 @@ public class JiraImportData94ServiceImpl implements JiraImportData94Service {
             project1.setEndTime(currentSqlDate);
 
             try {
-                String jiraProjectId = projectService.createJiraProject(project1);
+                String jiraProjectId = projectService.createImportProject(project1);
                 element.setAttribute("newId", jiraProjectId);
 
                 Map<String, String> roleIds = setProjectRole(jiraProjectId);
@@ -469,14 +546,19 @@ public class JiraImportData94ServiceImpl implements JiraImportData94Service {
                 }
                 CurrentProject.put(createUserId + "project",project1);
             }catch (Exception e) {
-                throw new ApplicationException(2000, "项目添加失败" + e.getMessage());
+                throw new ApplicationException(ErrorCode.CREATE_ERROR, "项目添加失败" + e.getMessage());
             }
         }
     }
 
     public void setVersion(Element element){
-        String pid = element.getAttribute("id");
-        String newId = element.getAttribute("newId");
+        String pid = element.getAttribute("id");//导出的id
+        String newId = element.getAttribute("newId");//本系统的id
+        ArrayList<Element> nodeAssociationList = this.NodeAssociationList.get();
+        // 事项与版本的关联关系，
+        List<Element> versionInfoList = nodeAssociationList.stream().filter(item -> item.getAttribute("sinkNodeEntity").equals("Version")).collect(Collectors.toList());
+        // 根据事项Id分组，一个事项可能对应多个版本，associationType="IssueFixVersion"的表示当前所在版本，associationType="IssueVersion"表示历史所在版本
+        Map<String, List<Element>> issueVersionMap = versionInfoList.stream().collect(Collectors.groupingBy(item -> item.getAttribute("sourceNodeId")));
         for (Element versionElement : this.VersionElementList.get()) {
             String project1 = versionElement.getAttribute("project");
             if(pid.equals(project1)){
@@ -785,7 +867,7 @@ public class JiraImportData94ServiceImpl implements JiraImportData94Service {
                             }
                         }
                     }
-                    String workId = workItemService.createJiraWorkItem(workItem);
+                    String workId = workItemService.createImportWorkItem(workItem);
                     element.setAttribute("newId", workId);
                     workItem.setId(workId);
                     workItem.setRootId(workId + ";");
@@ -795,11 +877,13 @@ public class JiraImportData94ServiceImpl implements JiraImportData94Service {
                     setWorkSprint(workItem, element);
                     // 设置模块
                     setWorkModule(workItem, element);
+                    // 设置附件
+                    setAttachment(workItem, element, projectElement);
                     workItemService.updateWork(workItem);
                 }
             }
         }catch (Exception e){
-            throw new ApplicationException(2000, "添加事项失败" + e.getMessage());
+            throw new ApplicationException(ErrorCode.CREATE_ERROR, "添加事项失败" + e.getMessage());
         }
     }
 
@@ -831,6 +915,39 @@ public class JiraImportData94ServiceImpl implements JiraImportData94Service {
         }
 
     }
+
+    public void setAttachment(WorkItem workItem, Element element, Element projectElement){
+        String projectCode = projectElement.getAttribute("key");// 项目编号
+        String workItemCode = workItem.getCode();
+        String issueId = element.getAttribute("id");
+        String filePath  = attachmentAddress + "/" + projectCode + "/" + "10000" + "/" + workItemCode + "/";
+        ArrayList<Element> fileAttachmentList = this.FileAttachmentList.get();
+        List<Element> workItemAttachment = fileAttachmentList.stream().filter(fileAttachment -> fileAttachment.getAttribute("issue").equals(issueId)).collect(Collectors.toList());
+        for (Element attachmentElement : workItemAttachment) {
+            String pathName = attachmentElement.getAttribute("id");// 路径中的名字
+            String filename = attachmentElement.getAttribute("filename");// 原本的名字
+            String mimetype = attachmentElement.getAttribute("mimetype");// 类型
+            String objectID;
+            try (InputStream inputStream = new FileInputStream(filePath + pathName)){
+                PutRequest putRequest = new PutRequest();
+                putRequest.setInputStream(inputStream);
+                putRequest.setFileName(filename);
+                putRequest.setFileType(filename.substring(filename.lastIndexOf('.') + 1));
+                objectID = dfsClient.put(putRequest);
+            }catch (Exception e){
+                throw new ApplicationException(ErrorCode.CREATE_ERROR, "附件添加失败，检查文件是否存在" + e.getMessage());
+            }
+
+            WorkAttach workAttach = new WorkAttach();
+            workAttach.setWorkItem(workItem);
+            workAttach.setAttachmentName(filename);
+            workAttach.setAttachmentUrl(objectID);
+            workAttach.setType(mimetype);
+            workAttachService.createWorkAttach(workAttach);
+        }
+    }
+
+
 
     public void setWorkModule(WorkItem workItem, Element element){
         String id = element.getAttribute("id");
@@ -946,7 +1063,7 @@ public class JiraImportData94ServiceImpl implements JiraImportData94Service {
                                 try {
                                     dmUserService.createDmUserEntity(dmUser);
                                 }catch (Exception e){
-                                    throw new ApplicationException(2000,"项目成员添加失败" + e.getMessage());
+                                    throw new ApplicationException(ErrorCode.CREATE_ERROR,"项目成员添加失败" + e.getMessage());
                                 }
                                 // 创建角色与项目成员的关联
                                 try{
@@ -960,7 +1077,7 @@ public class JiraImportData94ServiceImpl implements JiraImportData94Service {
                                         dmRoleUserService.createDmRoleUser(dmRoleUser);
                                     }
                                 }catch (Exception e){
-                                    throw new ApplicationException(2000,"项目角色成员添加失败" + e.getMessage());
+                                    throw new ApplicationException(ErrorCode.CREATE_ERROR,"项目角色成员添加失败" + e.getMessage());
 
                                 }
 
@@ -992,7 +1109,7 @@ public class JiraImportData94ServiceImpl implements JiraImportData94Service {
                         try {
                             dmUserService.createDmUserEntity(dmUser);
                         }catch (Exception e){
-                            throw new ApplicationException(2000,"项目成员添加失败" + e.getMessage());
+                            throw new ApplicationException(ErrorCode.CREATE_ERROR,"项目成员添加失败" + e.getMessage());
                         }
                         // 创建角色与项目成员的关联
                         try{
@@ -1006,7 +1123,7 @@ public class JiraImportData94ServiceImpl implements JiraImportData94Service {
                                 dmRoleUserService.createDmRoleUser(dmRoleUser);
                             }
                         }catch (Exception e){
-                            throw new ApplicationException(2000,"项目角色成员添加失败" + e.getMessage());
+                            throw new ApplicationException(ErrorCode.CREATE_ERROR,"项目角色成员添加失败" + e.getMessage());
 
                         }
 
@@ -1064,12 +1181,12 @@ public class JiraImportData94ServiceImpl implements JiraImportData94Service {
                     roleIds.put("common", dmRole1);
                 }
 
-                if(businessType == 1){
+                if(businessType == 2){
                     roleIds.put("admin", dmRole1);
                 }
             }
         }catch (Exception e){
-            throw new ApplicationException(2000,"项目角色添加失败" + e.getMessage());
+            throw new ApplicationException(ErrorCode.CREATE_ERROR,"项目角色添加失败" + e.getMessage());
         }
 
         return roleIds;

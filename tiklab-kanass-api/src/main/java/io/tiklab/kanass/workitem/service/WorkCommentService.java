@@ -4,10 +4,12 @@ import io.tiklab.core.page.Pagination;
 
 import io.tiklab.kanass.workitem.model.WorkComment;
 import io.tiklab.kanass.workitem.model.WorkCommentQuery;
+import org.springframework.web.bind.annotation.RequestBody;
 
 import javax.validation.Valid;
 import javax.validation.constraints.NotNull;
 import java.util.List;
+import java.util.Map;
 
 /**
 * 事项评论服务接口
@@ -20,6 +22,7 @@ public interface WorkCommentService {
     * @return
     */
     String createWorkComment(@NotNull @Valid WorkComment workComment);
+    String createImportWorkComment(@NotNull WorkComment workComment);
 
     /**
     * 更新事项评论
@@ -70,4 +73,10 @@ public interface WorkCommentService {
     */
     Pagination<WorkComment> findWorkCommentPage(WorkCommentQuery workCommentQuery);
 
+    /**
+     * 查询动态、评论、工时记录数量
+     * @param workCommentQuery
+     * @return
+     */
+    Map<String, Integer> findWorkDynamicAndCommentAndLogNum(WorkCommentQuery workCommentQuery);
 }

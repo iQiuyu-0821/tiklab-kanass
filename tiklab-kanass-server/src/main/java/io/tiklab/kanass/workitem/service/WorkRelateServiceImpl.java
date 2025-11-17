@@ -2,7 +2,9 @@ package io.tiklab.kanass.workitem.service;
 
 import io.tiklab.dal.jpa.criterial.condition.DeleteCondition;
 import io.tiklab.dal.jpa.criterial.conditionbuilder.DeleteBuilders;
+import io.tiklab.kanass.workitem.dao.WorkItemDao;
 import io.tiklab.kanass.workitem.model.WorkItem;
+import io.tiklab.kanass.workitem.model.WorkItemQuery;
 import io.tiklab.kanass.workitem.model.WorkRelate;
 import io.tiklab.kanass.workitem.model.WorkRelateQuery;
 import io.tiklab.core.page.PaginationBuilder;
@@ -71,7 +73,7 @@ public class WorkRelateServiceImpl implements WorkRelateService {
 
         WorkRelate workRelate = BeanMapper.map(workRelateEntity, WorkRelate.class);
 
-        joinTemplate.joinQuery(workRelate);
+        joinTemplate.joinQuery(workRelate, new String[]{"workItem", "relateWorkItem"});
 
         return workRelate;
     }
@@ -82,13 +84,14 @@ public class WorkRelateServiceImpl implements WorkRelateService {
 
         List<WorkRelate> workRelateList =  BeanMapper.mapList(workRelateEntityList,WorkRelate.class);
 
-        joinTemplate.joinQuery(workRelateList);
+        joinTemplate.joinQuery(workRelateList, new String[]{"workItem", "relateWorkItem"});
 
         return workRelateList;
     }
 
     @Override
     public List<Map<String, Object>> findWorkRelateList(WorkRelateQuery workRelateQuery) {
+        //查询工作关联实体列表
         List<WorkRelateEntity> workRelateListEntity = workRelateDao.findWorkRelateList(workRelateQuery);
         List<Map<String, Object>> workRelateList = new ArrayList<Map<String, Object>>();
         if(workRelateListEntity != null){
@@ -114,9 +117,33 @@ public class WorkRelateServiceImpl implements WorkRelateService {
 
         List<WorkRelate> workRelateList = BeanMapper.mapList(pagination.getDataList(),WorkRelate.class);
 
-        joinTemplate.joinQuery(workRelateList);
+        joinTemplate.joinQuery(workRelateList, new String[]{"workItem", "relateWorkItem"});
 
         return PaginationBuilder.build(pagination,workRelateList);
 
+    }
+
+    @Override
+    public Map<String, Integer> findWorkRelateAndChildNum(WorkRelateQuery workRelateQuery) {
+        Map<String, Integer> resultMap = new HashMap<>();
+        // 关联事项个数
+        Integer workRelateNum = workRelateDao.findRelateNum(workRelateQuery);
+        resultMap.put("relateNum", workRelateNum);
+
+        // 子事项个数
+        WorkItemQuery workItemQuery = new WorkItemQuery();
+        workItemQuery.setParentId(workRelateQuery.getWorkItemId());
+        WorkItem workItem = workItemService.findWorkItem(workRelateQuery.getWorkItemId());
+        workItemQuery.setWorkTypeId(workItem.getWorkType().getId());
+        Integer childNum = workItemService.findWorkChildNum(workItemQuery);
+        resultMap.put("childNum", childNum);
+        // 子任务个数（当事项类型为需求时）
+        if (workItem.getWorkTypeCode().equals("demand")){
+            workItemQuery.setWorkTypeId(null);
+            workItemQuery.setWorkTypeCode("task");
+            childNum = workItemService.findWorkChildNum(workItemQuery);
+            resultMap.put("taskChildNum", childNum);
+        }
+        return resultMap;
     }
 }

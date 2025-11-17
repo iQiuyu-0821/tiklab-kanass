@@ -8,6 +8,9 @@ import io.tiklab.kanass.sprint.model.Sprint;
 import io.tiklab.kanass.sprint.model.SprintQuery;
 import io.tiklab.kanass.sprint.model.SprintState;
 import io.tiklab.kanass.sprint.model.SprintStateQuery;
+import io.tiklab.kanass.workitem.model.WorkItemQuery;
+import io.tiklab.kanass.workitem.model.WorkSprint;
+import io.tiklab.kanass.workitem.model.WorkSprintQuery;
 import io.tiklab.kanass.workitem.service.WorkSprintService;
 import io.tiklab.privilege.vRole.model.VRoleDomain;
 import io.tiklab.toolkit.beans.BeanMapper;
@@ -25,10 +28,13 @@ import io.tiklab.message.message.model.SendMessageNotice;
 import io.tiklab.message.message.service.SendMessageNoticeService;
 import io.tiklab.message.setting.model.MessageType;
 import io.tiklab.user.user.model.User;
-import io.tiklab.user.user.service.UserService;
+import io.tiklab.user.user.service.UserProcessor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.util.CollectionUtils;
 
 import javax.validation.Valid;
 import javax.validation.constraints.NotNull;
@@ -36,6 +42,7 @@ import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
@@ -43,6 +50,7 @@ import java.util.stream.Collectors;
 */
 @Service
 public class SprintServiceImpl implements SprintService {
+    private static final Logger log = LoggerFactory.getLogger(SprintServiceImpl.class);
     public final ExecutorService executorService = Executors.newCachedThreadPool();
     @Autowired
     SprintDao sprintDao;
@@ -65,7 +73,7 @@ public class SprintServiceImpl implements SprintService {
     @Autowired
     WorkSprintService workSprintService;
     @Autowired
-    UserService userService;
+    UserProcessor userProcessor;
 
     @Value("${base.url:null}")
     String baseUrl;
@@ -88,12 +96,12 @@ public class SprintServiceImpl implements SprintService {
 
         Message message = new Message();
         MessageType messageType = new MessageType();
-        messageType.setId("KANASS_MESSAGETYPE_SPRINTCREATE");
+        messageType.setId("KANASS_SPRINTCREATE");
         message.setMessageType(messageType);
         message.setData(content);
 
         String createUserId = LoginContext.getLoginId();
-        User user = userService.findOne(createUserId);
+        User user = userProcessor.findOne(createUserId);
         content.put("createUser", user);
         content.put("createUserIcon",user.getNickname().substring( 0, 1).toUpperCase());
         content.put("receiveTime", new SimpleDateFormat("MM-dd").format(new Date()));
@@ -107,10 +115,12 @@ public class SprintServiceImpl implements SprintService {
         sendMessageNotice.setSendId(user.getId());
         sendMessageNotice.setSiteData(msg);
         sendMessageNotice.setQywechatData(msg);
+        sendMessageNotice.setEmailData(msg);
         sendMessageNotice.setDomainId(projectId);
         VRoleDomain vRoleDomain = new VRoleDomain();
         vRoleDomain.setModelId(sprint.getId());
         vRoleDomain.setType("sprint");
+
         sendMessageNotice.setvRoleDomain(vRoleDomain);
         sendMessageNoticeService.sendDmMessageNotice(sendMessageNotice);
     }
@@ -130,7 +140,7 @@ public class SprintServiceImpl implements SprintService {
         content.put("newValue", newSprint.getSprintState().getName());
 
         String createUserId = LoginContext.getLoginId();
-        User user = userService.findOne(createUserId);
+        User user = userProcessor.findOne(createUserId);
         content.put("createUser", user);
         content.put("createUserIcon",user.getNickname().substring( 0, 1).toUpperCase());
         content.put("receiveTime", new SimpleDateFormat("MM-dd").format(new Date()));
@@ -138,7 +148,7 @@ public class SprintServiceImpl implements SprintService {
 
         Message message = new Message();
         MessageType messageType = new MessageType();
-        messageType.setId("KANASS_MESSAGETYPE_SPRINTUPDATE");
+        messageType.setId("KANASS_SPRINTUPDATE");
         message.setMessageType(messageType);
         message.setData(content);
 
@@ -152,6 +162,7 @@ public class SprintServiceImpl implements SprintService {
         sendMessageNotice.setSendId(user.getId());
         sendMessageNotice.setSiteData(msg);
         sendMessageNotice.setQywechatData(msg);
+        sendMessageNotice.setEmailData(msg);
         sendMessageNotice.setDomainId(projectId);
         VRoleDomain vRoleDomain = new VRoleDomain();
         vRoleDomain.setModelId(newSprint.getId());
@@ -176,10 +187,13 @@ public class SprintServiceImpl implements SprintService {
         System.out.println(color);
         sprint.setColor(color);
 
+        sprint.setCreateTime(new java.sql.Date(System.currentTimeMillis()));
+        sprint.setUpdateTime(new java.sql.Date(System.currentTimeMillis()));
+
         SprintEntity sprintEntity = BeanMapper.map(sprint, SprintEntity.class);
         String id = sprintDao.createSprint(sprintEntity);
-        Sprint sprint1 = findSprint(id);
-        sendMessageForCreatSprint(sprint1);
+//        Sprint sprint1 = findSprint(id);
+//        sendMessageForCreatSprint(sprint1);
 
         return id;
     }
@@ -187,6 +201,9 @@ public class SprintServiceImpl implements SprintService {
     @Override
     public String createJiraSprint(@NotNull @Valid Sprint sprint) {
         //初始化迭代状态
+        sprint.setCreateTime(new java.sql.Date(System.currentTimeMillis()));
+        sprint.setUpdateTime(new java.sql.Date(System.currentTimeMillis()));
+
         SprintEntity sprintEntity = BeanMapper.map(sprint, SprintEntity.class);
         String id = sprintDao.createSprint(sprintEntity);
         return id;
@@ -204,6 +221,10 @@ public class SprintServiceImpl implements SprintService {
                 // 创建新的迭代与事项的记录
                 // 只查询迭代中未完成的事项
                 List<WorkItem> sprintWorkItemList = workItemService.findSprintWorkItemList(sprintId);
+                WorkSprintQuery query = new WorkSprintQuery();
+                query.setSprintId(sprintId);
+                List<WorkSprint> workSprintList = workSprintService.findWorkSprintList(query);
+                Map<String, WorkSprint> workSprintMap = workSprintList.stream().collect(Collectors.toMap(WorkSprint::getWorkItemId, Function.identity()));
                 if(sprintWorkItemList.size() > 0){
                     String valueString = "";
                     for (WorkItem workItem : sprintWorkItemList) {
@@ -214,10 +235,20 @@ public class SprintServiceImpl implements SprintService {
                             workItem.setSprint(sprint1);
                             workItem.setUpdateField("sprint");
                             workItemService.updateTodoTaskData(workItem);
+
+                            // 关联关系表更新迁移后的id
+                            WorkSprint workSprint = workSprintMap.get(workItem.getId());
+                            workSprint.setTargetSprintId(newSprintId);
+                            workSprintService.updateWorkSprint(workSprint);
                         }else {
                             workItem.setUpdateField("sprint");
                             workItem.setSprint(null);
                             workItemService.updateTodoTaskData(workItem);
+
+                            // 关联关系表更新迁移后的id
+                            WorkSprint workSprint = workSprintMap.get(workItem.getId());
+                            workSprint.setTargetSprintId(null);
+                            workSprintService.updateWorkSprint(workSprint);
                         }
 
                         String id = UuidGenerator.getRandomIdByUUID(12);
@@ -294,10 +325,14 @@ public class SprintServiceImpl implements SprintService {
             sprint.setWorkNumber(sprintWorkItemNum.get("all"));
             sprint.setWorkDoneNumber(sprintWorkItemNum.get("done"));
             sprint.setWorkProgressNumber(sprintWorkItemNum.get("progress"));
+
+            Map<String, Integer> sprintWorkTime = workItemService.findSprintWorkTime(id);
+            sprint.setEstimateTime(sprintWorkTime.get("estimateTime"));
+            sprint.setSurplusTime(sprintWorkTime.get("surplusTime"));
         }
 
 
-        joinTemplate.joinQuery(sprint);
+        joinTemplate.joinQuery(sprint, new String[]{"master", "builder", "project", "sprintState"});
         return sprint;
     }
 
@@ -307,7 +342,7 @@ public class SprintServiceImpl implements SprintService {
 
         List<Sprint> sprintList = BeanMapper.mapList(sprintEntityList, Sprint.class);
 
-        joinTemplate.joinQuery(sprintList);
+        joinTemplate.joinQuery(sprintList, new String[]{"master", "builder", "project", "sprintState"});
         return sprintList;
     }
 
@@ -318,16 +353,15 @@ public class SprintServiceImpl implements SprintService {
         if(sprintList.size() > 0){
             String sprintIds = "(" + sprintEntityList.stream().map(item -> "'" + item.getId() + "'").
                     collect(Collectors.joining(", ")) + ")";
-            List<String> sprintWorkItemNum = workSprintService.findSprintWorkItemNum(sprintIds);
+            List<Map<String, String>> sprintWorkItemList = workSprintService.findSprintWorkItemNum(sprintIds);
             for (Sprint sprint : sprintList) {
                 String id = sprint.getId();
-                List<String> countList = sprintWorkItemNum.stream().filter(item -> item.equals(id))
-                        .collect(Collectors.toList());
+                List<String> countList = sprintWorkItemList.stream().filter(map -> map.get("sprint_id").equals(id)).map(map -> map.get("sprint_id")).collect(Collectors.toList());
                 sprint.setWorkNumber(countList.size());
             }
         }
         // 查找迭代的事项数量
-        joinTemplate.joinQuery(sprintList);
+        joinTemplate.joinQuery(sprintList, new String[]{"master", "builder", "project", "sprintState"});
         return sprintList;
     }
 
@@ -335,10 +369,15 @@ public class SprintServiceImpl implements SprintService {
         List<SprintEntity> sprintEntityList = sprintDao.findSelectSprintList(sprintQuery);
         List<Sprint> sprintList = BeanMapper.mapList(sprintEntityList, Sprint.class);
 
-        joinTemplate.joinQuery(sprintList);
+        joinTemplate.joinQuery(sprintList, new String[]{"master", "builder", "project", "sprintState"});
         return sprintList;
     }
 
+    /**
+     * 查找迭代并设置是否被当前用户关注
+     * @param sprintQuery
+     * @return
+     */
     @Override
     public Pagination<Sprint> findSprintPage(SprintQuery sprintQuery) {
 
@@ -350,19 +389,28 @@ public class SprintServiceImpl implements SprintService {
             String sprintIds = "(" + sprintList.stream().map(item -> "'" + item.getId() + "'").
                     collect(Collectors.joining(", ")) + ")";
             List<String> focusSprintIds = sprintFocusService.findFocusSprintIds();
-            List<String> sprintWorkItemNum = workSprintService.findSprintWorkItemNum(sprintIds);
+            List<Map<String, String>> sprintWorkItemList = workSprintService.findSprintWorkItemNum(sprintIds);
 
             for (Sprint sprint : sprintList) {
                 String id = sprint.getId();
                 if(focusSprintIds.contains(id)){
                     sprint.setFocusIs(true);
                 }
-                List<String> countList = sprintWorkItemNum.stream().filter(item -> item.equals(id))
-                        .collect(Collectors.toList());
+                List<Map<String, String>> countList = sprintWorkItemList.stream().filter(map -> map.get("sprint_id").equals(id)).collect(Collectors.toList());
+
+                if (CollectionUtils.isEmpty(countList)){
+                    sprint.setWorkDoneNumber(0);
+                    sprint.setWorkProgressNumber(0);
+                    sprint.setWorkNumber(0);
+                    continue;
+                }
+
+                sprint.setWorkDoneNumber( (int) countList.stream().filter(workItem -> workItem.get("work_status_code").equals("DONE")).count());
+                sprint.setWorkProgressNumber( (int) countList.stream().filter(workItem -> workItem.get("work_status_code").equals("PROGRESS")).count());
                 sprint.setWorkNumber(countList.size());
             }
         }
-        joinTemplate.joinQuery(sprintList);
+        joinTemplate.joinQuery(sprintList, new String[]{"master", "builder", "project", "sprintState"});
         return PaginationBuilder.build(pagination,sprintList);
     }
 
@@ -373,19 +421,8 @@ public class SprintServiceImpl implements SprintService {
 
         List<Sprint> sprintList = BeanMapper.mapList(sprintEntityList, Sprint.class);
 
-        joinTemplate.joinQuery(sprintList);
+        joinTemplate.joinQuery(sprintList, new String[]{"master", "builder", "project", "sprintState"});
         return sprintList;
-    }
-
-    /**
-     * 查询请迭代状态
-     *
-     * @param sprintState
-     */
-    public List<SprintStateEntity> findSprintState(SprintState sprintState) {
-        SprintStateQuery sprintStateQuery = new SprintStateQuery();
-        sprintStateQuery.setSort(sprintState.getSort());
-        return sprintStateDao.findSprintStateList(sprintStateQuery);
     }
 
     @Override
@@ -394,16 +431,28 @@ public class SprintServiceImpl implements SprintService {
 
         List<Sprint> sprintList = BeanMapper.mapList(sprintEntityList, Sprint.class);
 
-        joinTemplate.joinQuery(sprintList);
+        joinTemplate.joinQuery(sprintList, new String[]{"master", "builder", "project", "sprintState"});
         return sprintList;
     }
 
+    /**
+     * 根据事项id 查找被关联的迭代
+     * @param workId
+     * @return
+     */
     @Override
     public List<Sprint> findWorkSprintList(String workId) {
         List<SprintEntity> sprintEntityList = sprintDao.findWorkSprintList(workId);
         List<Sprint> sprintList = BeanMapper.mapList(sprintEntityList, Sprint.class);
 
-        joinTemplate.joinQuery(sprintList);
+        joinTemplate.joinQuery(sprintList, new String[]{"master", "builder", "project", "sprintState"});
         return sprintList;
+    }
+
+    @Override
+    public Map<String, Integer> findSprintCount(SprintQuery sprintQuery) {
+        sprintQuery.setBuilderId(LoginContext.getLoginId());
+        Map<String, Integer> sprintCount = sprintDao.findSprintCount(sprintQuery);
+        return sprintCount;
     }
 }

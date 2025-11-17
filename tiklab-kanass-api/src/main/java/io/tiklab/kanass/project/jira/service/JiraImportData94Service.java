@@ -11,5 +11,5 @@ import java.util.Map;
 */
 public interface JiraImportData94Service {
 
-    String writeData(List<Element> elements, Map<String, Project> CurrentProject, Map<String, Integer> Percent);
+    String writeData(List<Element> elements, Map<String, String> Steps, Map<String, Project> CurrentProject, Map<String, Integer> Percent) throws InterruptedException;
 }

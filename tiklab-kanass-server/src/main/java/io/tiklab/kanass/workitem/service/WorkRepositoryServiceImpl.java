@@ -1,5 +1,9 @@
 package io.tiklab.kanass.workitem.service;
 
+import com.alibaba.fastjson.JSONObject;
+import io.tiklab.core.exception.ApplicationException;
+import io.tiklab.core.exception.SystemException;
+import io.tiklab.kanass.common.ErrorCode;
 import io.tiklab.kanass.project.wiki.model.KanassRepository;
 import io.tiklab.kanass.project.wiki.model.WikiRepository;
 import io.tiklab.kanass.support.model.SystemUrl;
@@ -34,12 +38,12 @@ public class WorkRepositoryServiceImpl implements WorkRepositoryService {
         return url;
     }
 
-//    UserService userServiceRpc(){
+//    UserProcessor userServiceRpc(){
 //        SystemUrlQuery systemUrlQuery = new SystemUrlQuery();
 //        systemUrlQuery.setName("sward");
 //        List<SystemUrl> systemUrlList = systemUrlService.findSystemUrlList(systemUrlQuery);
 //        String url = systemUrlList.get(0).getSystemUrl();
-//        return new RpcClientTeamWireUtil().rpcClient().getBean(UserService.class, new FixedLookup(url));
+//        return new RpcClientTeamWireUtil().rpcClient().getBean(UserProcessor.class, new FixedLookup(url));
 //    }
 
 
@@ -51,10 +55,14 @@ public class WorkRepositoryServiceImpl implements WorkRepositoryService {
 
         List<KanassRepository> kanassRepositoryList = new ArrayList<KanassRepository>();
         for (WikiRepository wikiRepository : allRepository) {
+            if (wikiRepository.getLimits().equals("1")){
+                // 私密知识库不关联
+                continue;
+            }
             KanassRepository kanassRepository = new KanassRepository();
             kanassRepository.setId(wikiRepository.getId());
             kanassRepository.setKanassRepositoryName(wikiRepository.getName());
-            kanassRepository.setUserName(wikiRepository.getMaster().getName());
+            kanassRepository.setUserName(wikiRepository.getMaster().getNickname());
             kanassRepository.setCreateTime(wikiRepository.getCreateTime());
 
             kanassRepositoryList.add(kanassRepository);
@@ -77,7 +85,7 @@ public class WorkRepositoryServiceImpl implements WorkRepositoryService {
                 KanassRepository kanassRepository = new KanassRepository();
                 kanassRepository.setId(wikiRepository.getId());
                 kanassRepository.setKanassRepositoryName(wikiRepository.getName());
-                kanassRepository.setUserName(wikiRepository.getMaster().getName());
+                kanassRepository.setUserName(wikiRepository.getMaster().getNickname());
                 kanassRepository.setCreateTime(wikiRepository.getCreateTime());
                 kanassRepository.setIconUrl(wikiRepository.getIconUrl());
                 kanassRepositoryList.add(kanassRepository);
@@ -95,6 +103,40 @@ public class WorkRepositoryServiceImpl implements WorkRepositoryService {
         List<DmUser> dmUsers = httpRequestUtil.requestPostList(httpHeaders, systemUrl + "/api/dmUser/findDmUserList", dmUserQuery, DmUser.class);
 
         return dmUsers;
+    }
+
+    /**
+     * 创建知识库
+     *
+     * @return
+     */
+    @Override
+    public String createRepository(WikiRepository wikiRepository) {
+        HttpHeaders httpHeaders = httpRequestUtil.initHeaders(MediaType.APPLICATION_JSON, null);
+        String systemUrl = getSystemUrl();
+        JSONObject paramJson = new JSONObject();
+        paramJson.put("name", wikiRepository.getName());
+        paramJson.put("desc", wikiRepository.getDesc());
+        paramJson.put("limits", wikiRepository.getLimits());
+        paramJson.put("master", wikiRepository.getMaster());
+        paramJson.put("iconUrl", wikiRepository.getIconUrl());
+        JSONObject jsonObject = httpRequestUtil.sendPost(httpHeaders, systemUrl + "/api/repository/createRepositoryByValidCreateUser", paramJson);
+
+        // 解析结果
+        if (Objects.isNull(jsonObject)){
+            throw new ApplicationException(ErrorCode.OTHER_ERROR,"获取接口返回数据为空！");
+        }
+        Integer code = jsonObject.getInteger("code");
+        if (code != 0){
+            String msg = jsonObject.getString("msg");
+            throw new SystemException(msg);
+        }
+        String wikiRepositoryId = jsonObject.getString("data");
+        if (Objects.isNull(wikiRepositoryId)){
+            return null;
+        }
+
+        return wikiRepositoryId;
     }
 
 }

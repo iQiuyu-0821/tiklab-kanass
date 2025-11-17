@@ -10,8 +10,10 @@ import io.tiklab.toolkit.beans.annotation.Mapping;
 import io.tiklab.toolkit.beans.annotation.Mappings;
 import io.tiklab.core.BaseModel;
 import io.tiklab.toolkit.join.annotation.Join;
-import io.tiklab.toolkit.join.annotation.JoinQuery;
+import io.tiklab.toolkit.join.annotation.JoinField;
 import io.tiklab.user.user.model.User;
+
+import java.sql.Date;
 
 /**
  * 迭代模板
@@ -43,28 +45,28 @@ public class Sprint extends BaseModel {
     @Mappings({
             @Mapping(source = "master.id",target = "master")
     })
-    @JoinQuery(key = "id")
+    @JoinField(key = "id")
     private User master;
 
     @ApiProperty(name="builder",desc="创建人")
     @Mappings({
             @Mapping(source = "builder.id",target = "builder")
     })
-    @JoinQuery(key = "id")
+    @JoinField(key = "id")
     private User builder;
 
     @ApiProperty(name="project",desc="所属项目",eg="@selectOne")
     @Mappings({
             @Mapping(source = "project.id",target = "projectId")
     })
-    @JoinQuery(key = "id")
+    @JoinField(key = "id")
     private Project project;
 
     @ApiProperty(name="sprintState",desc="迭代状态")
     @Mappings({
             @Mapping(source = "sprintState.id",target = "sprintStateId")
     })
-    @JoinQuery(key = "id")
+    @JoinField(key = "id")
     private SprintState sprintState;
 
     @ApiProperty(name="startTime",desc="开始时间")
@@ -87,6 +89,12 @@ public class Sprint extends BaseModel {
     @JSONField(format = "yyyy-MM-dd HH:mm:ss")
     private String relaEndTime;
 
+    @ApiProperty(name="createTime",desc="创建时间")
+    private Date createTime;
+
+    @ApiProperty(name="updateTime",desc="更新时间")
+    private Date updateTime;
+
     @ApiProperty(name="work_number",desc="迭代的事项数量")
     private Integer workNumber;
 
@@ -98,6 +106,12 @@ public class Sprint extends BaseModel {
 
     @ApiProperty(name="quantityNumber",desc="完成数量")
     private Integer quantityNumber;
+
+    @ApiProperty(name="estimateTime",desc="计划工时")
+    private Integer estimateTime;
+
+    @ApiProperty(name="surplusTime",desc="剩余工时")
+    private Integer surplusTime;
 
     public java.lang.String getId() {
         return id;
@@ -241,5 +255,37 @@ public class Sprint extends BaseModel {
 
     public void setColor(int color) {
         this.color = color;
+    }
+
+    public Integer getEstimateTime() {
+        return estimateTime;
+    }
+
+    public void setEstimateTime(Integer estimateTime) {
+        this.estimateTime = estimateTime;
+    }
+
+    public Integer getSurplusTime() {
+        return surplusTime;
+    }
+
+    public void setSurplusTime(Integer surplusTime) {
+        this.surplusTime = surplusTime;
+    }
+
+    public Date getCreateTime() {
+        return createTime;
+    }
+
+    public void setCreateTime(Date createTime) {
+        this.createTime = createTime;
+    }
+
+    public Date getUpdateTime() {
+        return updateTime;
+    }
+
+    public void setUpdateTime(Date updateTime) {
+        this.updateTime = updateTime;
     }
 }

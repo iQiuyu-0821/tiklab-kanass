@@ -22,7 +22,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 /**
- * 收藏迭代的服务
+ * 项目用例库关联
  */
 @Service
 public class ProjectTestRepositoryImpl implements ProjectTestRepositoryService {
@@ -111,7 +111,7 @@ public class ProjectTestRepositoryImpl implements ProjectTestRepositoryService {
     public ProjectTestRepository findProjectTestRepository(@NotNull String id) {
         ProjectTestRepository projectTestRepository = findOne(id);
 
-        joinTemplate.joinQuery(projectTestRepository);
+        joinTemplate.joinQuery(projectTestRepository, new String[]{"testRepository", "project"});
 
         return projectTestRepository;
     }
@@ -122,7 +122,7 @@ public class ProjectTestRepositoryImpl implements ProjectTestRepositoryService {
 
         List<ProjectTestRepository> projectTestRepositoryList =  BeanMapper.mapList(projectTestRepositoryEntityList,ProjectTestRepository.class);
 
-        joinTemplate.joinQuery(projectTestRepositoryList);
+        joinTemplate.joinQuery(projectTestRepositoryList, new String[]{"testRepository", "project"});
 
         return projectTestRepositoryList;
     }
@@ -151,7 +151,7 @@ public class ProjectTestRepositoryImpl implements ProjectTestRepositoryService {
 
         List<ProjectTestRepository> projectTestRepositoryList = BeanMapper.mapList(pagination.getDataList(),ProjectTestRepository.class);
 
-        joinTemplate.joinQuery(projectTestRepositoryList);
+        joinTemplate.joinQuery(projectTestRepositoryList, new String[]{"testRepository", "project"});
 
         return PaginationBuilder.build(pagination,projectTestRepositoryList);
     }

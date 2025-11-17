@@ -1,5 +1,6 @@
 package io.tiklab.kanass.project.project.service;
 
+import io.tiklab.core.page.Page;
 import io.tiklab.core.page.Pagination;
 import io.tiklab.toolkit.join.annotation.FindList;
 import io.tiklab.toolkit.join.annotation.JoinProvider;
@@ -8,6 +9,7 @@ import io.tiklab.toolkit.join.annotation.FindOne;
 import io.tiklab.kanass.project.project.model.Project;
 import io.tiklab.kanass.project.project.model.ProjectQuery;
 import io.tiklab.kanass.workitem.model.WorkTypeDm;
+import org.springframework.web.bind.annotation.RequestBody;
 
 import javax.validation.Valid;
 import javax.validation.constraints.NotNull;
@@ -26,7 +28,8 @@ public interface ProjectService {
     * @return
     */
     String createProject(@NotNull @Valid Project project);
-    String createJiraProject(@NotNull @Valid Project project);
+    // 创建从jira、mantis引入的项目
+    String createImportProject(@NotNull @Valid Project project);
     /**
     * 更新项目
     * @param project
@@ -103,6 +106,12 @@ public interface ProjectService {
      * @return
      */
     List<Project> findJoinProjectList(ProjectQuery projectQuery);
+    /**
+     * 查找我参与的项目列表  不计算进度
+     * @param projectQuery
+     * @return
+     */
+    List<Project> findJoinProjectListNoPercent(ProjectQuery projectQuery);
 
     /**
      * 查找最近查看的项目
@@ -127,4 +136,10 @@ public interface ProjectService {
     List<Project> findProjectSortRecentTime(ProjectQuery projectQuery);
 
     void batchCreateProject();
+
+    /**
+     * 查询项目数量 包括所有、我收藏的、我创建的
+     * @return
+     */
+    Map<String,Integer> findProjectCount(ProjectQuery projectQuery);
 }

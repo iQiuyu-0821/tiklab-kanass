@@ -1,5 +1,6 @@
 package io.tiklab.kanass.project.test.service;
 
+import com.alibaba.fastjson.JSONObject;
 import io.tiklab.toolkit.join.JoinTemplate;
 import io.tiklab.kanass.project.test.model.TestRepository;
 import io.tiklab.kanass.support.model.SystemUrl;
@@ -7,6 +8,8 @@ import io.tiklab.kanass.support.model.SystemUrlQuery;
 import io.tiklab.kanass.support.service.SystemUrlService;
 import io.tiklab.kanass.support.util.HttpRequestUtil;
 import io.tiklab.kanass.project.test.model.Repository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -15,8 +18,12 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * 获取用例库的信息
+ */
 @Service
 public class TestRepositoryServiceImpl implements TestRepositoryService {
+    private static Logger logger = LoggerFactory.getLogger(TestRepositoryServiceImpl.class);
 
     @Autowired
     SystemUrlService systemUrlService;
@@ -29,7 +36,7 @@ public class TestRepositoryServiceImpl implements TestRepositoryService {
     String getSystemUrl(){
 
         SystemUrlQuery systemUrlQuery = new SystemUrlQuery();
-        systemUrlQuery.setName("teston");
+        systemUrlQuery.setName("kanass");
         List<SystemUrl> systemUrlList = systemUrlService.findSystemUrlList(systemUrlQuery);
         String url = systemUrlList.get(0).getSystemUrl();
         return url;
@@ -45,6 +52,9 @@ public class TestRepositoryServiceImpl implements TestRepositoryService {
 //        List<Repository> allRepository = repositoryServiceRpc().findAllRepository();
         List<TestRepository> testRepositoryList = new ArrayList<>();
         for (Repository repository : allRepository) {
+            if (repository == null){
+                continue;
+            }
             TestRepository testRepository = new TestRepository();
             testRepository.setId(repository.getId());
             testRepository.setUser(repository.getUser().getNickname());
@@ -64,9 +74,12 @@ public class TestRepositoryServiceImpl implements TestRepositoryService {
         List<Repository> list = httpRequestUtil.requestPostList(httpHeaders, systemUrl + "/api/repository/findList", idList, Repository.class);
 
 //        List<Repository> list = repositoryServiceRpc().findList(idList);
-        joinTemplate.joinQuery(list);
+        joinTemplate.joinQuery(list, new String[]{"user"});
         List<TestRepository> testRepositoryList = new ArrayList<>();
         for (Repository repository : list) {
+            if (repository == null){
+                continue;
+            }
             TestRepository testRepository = new TestRepository();
             testRepository.setId(repository.getId());
             testRepository.setUser(repository.getUser().getNickname());
@@ -75,5 +88,20 @@ public class TestRepositoryServiceImpl implements TestRepositoryService {
             testRepositoryList.add(testRepository);
         }
         return testRepositoryList;
+    }
+
+    @Override
+    public void createTestHuboBindWorkItem(JSONObject paramJson) {
+        try{
+            HttpHeaders httpHeaders = httpRequestUtil.initHeaders(MediaType.APPLICATION_JSON, null);
+            String systemUrl = getSystemUrl();
+            JSONObject jsonObject = httpRequestUtil.sendPost(httpHeaders, systemUrl + "/api/workItemBind/createWorkItemBind", paramJson);
+
+            logger.info(jsonObject.toString());
+        }catch (Exception e){
+            logger.error("createTestHuboBindWorkItem error:"+e.getMessage());
+        }
+
+
     }
 }

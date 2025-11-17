@@ -9,9 +9,11 @@ import io.tiklab.toolkit.beans.annotation.Mapping;
 import io.tiklab.toolkit.beans.annotation.Mappings;
 import io.tiklab.core.BaseModel;
 import io.tiklab.toolkit.join.annotation.Join;
-import io.tiklab.toolkit.join.annotation.JoinQuery;
+import io.tiklab.toolkit.join.annotation.JoinField;
 import io.tiklab.kanass.project.project.model.Project;
 import io.tiklab.user.user.model.User;
+
+import java.sql.Date;
 
 /**
  * 项目版本模型
@@ -36,14 +38,14 @@ public class ProjectVersion extends BaseModel {
     @Mappings({
             @Mapping(source = "master.id",target = "master")
     })
-    @JoinQuery(key = "id")
+    @JoinField(key = "id")
     private User master;
 
     @ApiProperty(name="builder",desc="创建人")
     @Mappings({
             @Mapping(source = "builder.id",target = "builder")
     })
-    @JoinQuery(key = "id")
+    @JoinField(key = "id")
     private User builder;
 
 
@@ -70,6 +72,12 @@ public class ProjectVersion extends BaseModel {
     @JSONField(format = "yyyy-MM-dd HH:mm:ss")
     private String relaPublishTime;
 
+    @ApiProperty(name="createTime",desc="创建时间")
+    private Date createTime;
+
+    @ApiProperty(name="updateTime",desc="更新时间")
+    private Date updateTime;
+
     @ApiProperty(name = "workNumber", desc = "事项数量")
     private int workNumber;
 
@@ -86,16 +94,21 @@ public class ProjectVersion extends BaseModel {
     @Mappings({
             @Mapping(source = "versionState.id",target = "versionState")
     })
-    @JoinQuery(key = "id")
+    @JoinField(key = "id")
     private VersionState versionState;
 
     @ApiProperty(name = "project", desc = "所属项目")
     @Mappings({
             @Mapping(source = "project.id", target = "projectId")
     })
-    @JoinQuery(key = "id")
+    @JoinField(key = "id")
     private Project project;
 
+    @ApiProperty(name="estimateTime",desc="计划工时")
+    private Integer estimateTime;
+
+    @ApiProperty(name="surplusTime",desc="剩余工时")
+    private Integer surplusTime;
 
     public String getId() {
         return id;
@@ -224,5 +237,37 @@ public class ProjectVersion extends BaseModel {
 
     public void setColor(int color) {
         this.color = color;
+    }
+
+    public Integer getEstimateTime() {
+        return estimateTime;
+    }
+
+    public void setEstimateTime(Integer estimateTime) {
+        this.estimateTime = estimateTime;
+    }
+
+    public Integer getSurplusTime() {
+        return surplusTime;
+    }
+
+    public void setSurplusTime(Integer surplusTime) {
+        this.surplusTime = surplusTime;
+    }
+
+    public Date getCreateTime() {
+        return createTime;
+    }
+
+    public void setCreateTime(Date createTime) {
+        this.createTime = createTime;
+    }
+
+    public Date getUpdateTime() {
+        return updateTime;
+    }
+
+    public void setUpdateTime(Date updateTime) {
+        this.updateTime = updateTime;
     }
 }

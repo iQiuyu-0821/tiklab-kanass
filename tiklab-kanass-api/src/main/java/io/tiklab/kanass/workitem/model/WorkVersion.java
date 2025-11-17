@@ -9,7 +9,7 @@ import io.tiklab.toolkit.beans.annotation.Mapper;
 import io.tiklab.toolkit.beans.annotation.Mapping;
 import io.tiklab.toolkit.beans.annotation.Mappings;
 import io.tiklab.toolkit.join.annotation.Join;
-import io.tiklab.toolkit.join.annotation.JoinQuery;
+import io.tiklab.toolkit.join.annotation.JoinField;
 
 import javax.validation.constraints.NotNull;
 
@@ -33,6 +33,10 @@ public class WorkVersion extends BaseModel {
     @ApiProperty(name="versionId",desc="版本名称",required = true)
     private String versionId;
 
+    // null表示没有迁移  有id表示迁移的目标版本
+    @ApiProperty(name="targetSprintId",desc="迁移的目标版本id")
+    private String targetVersionId;
+
     public String getId() {
         return id;
     }
@@ -55,5 +59,13 @@ public class WorkVersion extends BaseModel {
 
     public void setVersionId(String versionId) {
         this.versionId = versionId;
+    }
+
+    public String getTargetVersionId() {
+        return targetVersionId;
+    }
+
+    public void setTargetVersionId(String targetVersionId) {
+        this.targetVersionId = targetVersionId;
     }
 }

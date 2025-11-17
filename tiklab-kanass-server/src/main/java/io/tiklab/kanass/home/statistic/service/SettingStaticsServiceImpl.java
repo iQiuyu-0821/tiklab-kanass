@@ -18,17 +18,21 @@ import io.tiklab.privilege.role.service.RoleService;
 import io.tiklab.security.backups.service.BackupsDbService;
 import io.tiklab.user.directory.service.UserDirService;
 import io.tiklab.user.orga.service.OrgaService;
-import io.tiklab.user.user.service.UserService;
+import io.tiklab.user.user.service.UserProcessor;
 import io.tiklab.user.usergroup.service.UserGroupService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.HashMap;
 
+/**
+ * 用于设置首页的各个模块统计数据，弃用
+ * @return
+ */
 @Service
 public class SettingStaticsServiceImpl implements SettingStaticsService{
     @Autowired
-    UserService userService;
+    UserProcessor userProcessor;
 
     @Autowired
     OrgaService orgaService;
@@ -81,12 +85,16 @@ public class SettingStaticsServiceImpl implements SettingStaticsService{
     @Autowired
     SystemUrlService systemUrlService;
 
+    /**
+     * 用于设置首页的各个模块统计数据，弃用
+     * @return
+     */
     @Override
     public HashMap<String, Object> findOrgaNum() {
         HashMap<String, Object> numMap = new HashMap<>();
 
         // 用户
-        Integer userNumber = userService.findUserNumber();
+        Integer userNumber = userProcessor.findUserNumber();
         Integer orgaNumber = orgaService.findOrgaNumber();
         Integer userGroupNumber = userGroupService.findUserGroupNumber();
         Integer roleNumber = roleService.findRoleNumber();

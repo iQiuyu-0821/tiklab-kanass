@@ -1,7 +1,12 @@
 package io.tiklab.kanass.project.project.dao;
 
+import io.tiklab.core.order.Order;
+import io.tiklab.core.order.OrderTypeEnum;
+import io.tiklab.kanass.common.JdbcTypeCheckUtil;
 import io.tiklab.kanass.project.project.entity.ProjectEntity;
 import io.tiklab.kanass.project.project.entity.ProjectFocusEntity;
+import io.tiklab.kanass.project.project.model.Project;
+import io.tiklab.kanass.project.project.model.ProjectFocusQuery;
 import io.tiklab.kanass.project.project.model.ProjectQuery;
 import io.tiklab.kanass.support.entity.RecentEntity;
 import io.tiklab.core.page.Pagination;
@@ -11,6 +16,7 @@ import io.tiklab.dal.jpa.criterial.conditionbuilder.OrQueryBuilders;
 import io.tiklab.dal.jpa.criterial.conditionbuilder.QueryBuilders;
 import io.tiklab.dal.jpa.JpaTemplate;
 import net.sourceforge.pinyin4j.PinyinHelper;
+import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -34,6 +40,9 @@ public class ProjectDao{
 
     @Autowired
     JpaTemplate jpaTemplate;
+
+    @Autowired
+    private JdbcTypeCheckUtil jdbcTypeCheckUtil;
 
     /**
      * 创建项目
@@ -107,9 +116,14 @@ public class ProjectDao{
 
     public List<ProjectEntity> findProjectList(ProjectQuery projectQuery) {
         QueryBuilders queryBuilders = QueryBuilders.createQuery(ProjectEntity.class, "pj");
-        QueryCondition queryCondition = queryBuilders.leftJoin(ProjectFocusEntity.class,"pf","pf.projectId=pj.id")
+        if (StringUtils.isNotBlank(projectQuery.getFocusUser())){
+            queryBuilders.leftJoin(ProjectFocusEntity.class,"pf","pf.projectId=pj.id")
+                    .eq("pf.masterId", projectQuery.getFocusUser());
+        }
+        QueryCondition queryCondition = queryBuilders
                 .like("pj.projectName", projectQuery.getProjectName())
                 .eq("pj.projectSetId", projectQuery.getProjectSetId())
+                .eq("pj.productId", projectQuery.getProductId())
                 .eq("pj.master", projectQuery.getMaster())
                 .eq("pj.creator", projectQuery.getCreator())
                 .eq("pj.id", projectQuery.getProjectId())
@@ -118,7 +132,7 @@ public class ProjectDao{
                 .eq("pj.projectLimits",projectQuery.getProjectLimits())
                 .in("pj.id",projectQuery.getProjectIds())
                 .in("pj.projectSetId", projectQuery.getProjectSetIds())
-                .eq("pf.masterId", projectQuery.getFocusUser())
+                .in("pj.productId", projectQuery.getProductIds())
                 .in("pj.projectState", projectQuery.getProjectStates())
                 .orders(projectQuery.getOrderParams())
                 .get();
@@ -143,6 +157,15 @@ public class ProjectDao{
             paramMap.put("project_name", projectQuery.getFocusUser());
         }
 
+        if(projectQuery.getProjectLimits() != null ){
+            if(paramMap.isEmpty()){
+                sql = sql.concat(" pr.project_limits = '" + projectQuery.getProjectLimits() + "'");
+            }else {
+                sql = sql.concat(" and pr.project_limits = '" + projectQuery.getProjectLimits() + "'");
+            }
+            paramMap.put("project_limits", projectQuery.getProjectLimits());
+        }
+
         if(projectQuery.getCreator() != null ){
             if(paramMap.isEmpty()){
                 sql = sql.concat(" pr.creator = '" + projectQuery.getCreator() + "'");
@@ -152,7 +175,7 @@ public class ProjectDao{
             paramMap.put("creator", projectQuery.getCreator());
         }
 
-        if(projectQuery.getProjectIds() != null ){
+        if(projectQuery.getProjectIds() != null && projectQuery.getProjectIds().length > 0 ){
 //            if(paramMap.isEmpty()){
 //                sql = sql.concat(" pr.id  in '" + projectQuery.getProjectIds() + "'");
 //            }else {
@@ -394,19 +417,114 @@ public class ProjectDao{
      * @return
      */
     public Pagination<ProjectEntity> findProjectPage(ProjectQuery projectQuery){
-        QueryBuilders queryBuilders = QueryBuilders.createQuery(ProjectEntity.class, "rs");
-        OrQueryCondition orQueryBuildCondition = OrQueryBuilders.instance()
-                .eq("projectLimits",0)
-                .in("id",projectQuery.getProjectIds())
-                .get();
-        QueryCondition queryCondition = queryBuilders.or(orQueryBuildCondition)
-                .like("projectName", projectQuery.getProjectName())
-                .eq("projectSetId", projectQuery.getProjectSetId())
-                .eq("master", projectQuery.getMaster())
-                .orders(projectQuery.getOrderParams())
-                .pagination(projectQuery.getPageParam())
-                .get();
-        return jpaTemplate.findPage(queryCondition, ProjectEntity.class);
+        String sql = "select p.* from pmc_project p ";
+        if (projectQuery.getFocusUser() != null){
+            sql = sql.concat(" left join pmc_project_focus ppf on ppf.project_id = p.id ");
+        }
+        sql = sql.concat(" where 1=1 ");
+        List<Object> objects = new ArrayList<>();
+        if (projectQuery.getProjectIds() != null){
+            String[] projectIds = projectQuery.getProjectIds();
+            String s = new String();
+            s =  "(";
+            for(String id: projectIds){
+                s = s.concat("'" + id + "',");
+            }
+            s= s.substring(0, s.length() - 1);
+            s= s.concat(")");
+            sql = sql.concat(" and p.id in " + s);
+//            sql = sql.concat(" and p.id in ? ");
+//            objects.add(s);
+        }
+        if (projectQuery.getProjectName() != null){
+            sql = sql.concat(" and p.project_name like '%" + projectQuery.getProjectName() + "%' ");
+//            sql = sql.concat(" and p.project_name like '?' ");
+//            objects.add(projectQuery.getProjectName());
+        }
+        if (projectQuery.getProjectSetId() != null){
+            sql = sql.concat(" and p.project_set_id = '" + projectQuery.getProjectSetId() + "'");
+//            sql = sql.concat(" and p.project_set_id = '?'");
+//            objects.add(projectQuery.getProjectSetId());
+        }
+        if (projectQuery.isProjectSetIdNull()){
+            sql = sql.concat(" and p.project_set_id is null");
+        }
+        if (projectQuery.getProductId() != null){
+            sql = sql.concat(" and p.product_id = '" + projectQuery.getProductId() + "'");
+        }
+        if (projectQuery.isProductIdNull()){
+            sql = sql.concat(" and p.product_id is null");
+        }
+        if (projectQuery.getOverdue() != null && projectQuery.getOverdue()){
+            Date date = new Date();
+            SimpleDateFormat simpleDateFormat = new SimpleDateFormat("yyyy-MM-dd");
+            String currentTime = simpleDateFormat.format(date);
+            sql = sql.concat(" and p.end_time < '" + currentTime + "' and project_state != '3'");
+//            sql = sql.concat(" and p.end_time < '?' and project_state != '3'");
+//            objects.add(currentTime);
+        }
+        if (projectQuery.getProjectStates() != null && projectQuery.getProjectStates().length > 0){
+            String[] projectStates = projectQuery.getProjectStates();
+            String s = new String();
+            s =  "(";
+            for(String projectState: projectStates){
+                s = s.concat("'" + projectState + "',");
+            }
+            s= s.substring(0, s.length() - 1);
+            s = s.concat(")");
+            sql  = sql.concat(" and p.project_state in " + s);
+//            sql  = sql.concat(" and p.project_state in ? " );
+//            objects.add(s);
+        }
+        if (projectQuery.getCreator() != null){
+            sql = sql.concat(" and p.creator = '" + projectQuery.getCreator() + "'");
+//            sql = sql.concat(" and p.creator = '?'");
+//            objects.add(projectQuery.getCreator());
+        }
+        if (projectQuery.getFocusUser() != null){
+            sql = sql.concat(" and ppf.master_id = '" + projectQuery.getFocusUser() + "'");
+//            sql = sql.concat(" and ppf.master_id = '?'");
+//            objects.add(projectQuery.getFocusUser());
+        }
+        if (projectQuery.getProjectTypeId() != null){
+            sql = sql.concat(" and p.project_type_id = '" + projectQuery.getProjectTypeId() + "'");
+//            sql = sql.concat(" and p.creator = '?'");
+//            objects.add(projectQuery.getCreator());
+        }
+
+        if(!ObjectUtils.isEmpty(projectQuery.getOrderParams())){
+            sql= sql.concat(" order by");
+            for (Order orderParam : projectQuery.getOrderParams()) {
+                OrderTypeEnum orderType = orderParam.getOrderType();
+                String name = orderParam.getName();
+                sql = sql.concat(" p." + camelToUnderline(name) + " " + orderType + "," );
+            }
+        }
+        if(!ObjectUtils.isEmpty(projectQuery.getOrderParams())){
+            sql= sql.substring(0, sql.length() - 1);
+        }
+
+        int size = objects.size();
+        Object[] objects1 = new Object[size];
+        Object[] objects2 = objects.toArray(objects1);
+        return jpaTemplate.getJdbcTemplate().findPage(
+                sql,
+                objects2,
+                projectQuery.getPageParam(),
+                new BeanPropertyRowMapper(ProjectEntity.class)
+        );
+    }
+
+    /**
+     * 将驼峰命名转换为下划线命名（createTime -> create_time）
+     * @param camelCase 驼峰命名字符串
+     * @return 下划线命名字符串
+     */
+    public static String camelToUnderline(String camelCase) {
+        if (camelCase == null || camelCase.isEmpty()) {
+            return camelCase;
+        }
+        return camelCase.replaceAll("([a-z])([A-Z])", "$1_$2").toLowerCase();
     }
 
     /**
@@ -449,7 +567,12 @@ public class ProjectDao{
         if(projectId != null){
             sql = sql + " and pr.id != '" + projectId + "'";
         }
-        sql = sql + " order by rc.recent_time desc NULLS LAST";
+        if (jdbcTypeCheckUtil.checkType().equals("postgresql")){
+            sql = sql + " order by rc.recent_time desc NULLS LAST";
+        }else if (jdbcTypeCheckUtil.checkType().equals("mysql")){
+            sql = sql + " ORDER BY IF(rc.recent_time IS NULL, 1, 0), rc.recent_time DESC";
+        }
+
         List<ProjectEntity> projectEntityList = jpaTemplate.getJdbcTemplate().query(sql, new BeanPropertyRowMapper(ProjectEntity.class));
         return projectEntityList;
     }
@@ -518,6 +641,14 @@ public class ProjectDao{
             logger.info("删除事项类型失败");
         }
 
+        // 事项权限
+        sql = "DELETE FROM pmc_work_role_function_dm where domain_id = '" + projectId + "'";
+        update = jpaTemplate.getJdbcTemplate().update(sql);
+        if(update >= 0){
+            logger.info("删除事项权限成功");
+        }else {
+            logger.info("删除事项权限失败");
+        }
         // 模块
         sql = "DELETE FROM pmc_module where project_id = '" + projectId + "'";
         update = jpaTemplate.getJdbcTemplate().update(sql);
@@ -734,5 +865,91 @@ public class ProjectDao{
         }
 
 
+    }
+
+    public HashMap<String, Integer> findProjectCount(ProjectQuery projectQuery){
+        String userId = projectQuery.getCreator();
+        String[] projectIds = projectQuery.getProjectIds();
+        String s = new String();
+        if (projectIds != null && projectIds.length != 0){
+            s =  "(";
+            for(String projectId:projectIds){
+                s = s.concat("'" + projectId + "',");
+            }
+            s= s.substring(0, s.length() - 1);
+            s = s.concat(")");
+        }else {
+            s="('')";
+        }
+
+        HashMap<String, Integer> projectCount = new HashMap<>();
+        String sql1 = "SELECT count(1) as total from pmc_project where ( project_limits = '0' or id in " + s + ") ";
+        if (StringUtils.isNotBlank(projectQuery.getProjectName())){
+            sql1 = sql1.concat(" and project_name like'%" + projectQuery.getProjectName() + "%'") ;
+        }
+        if (projectQuery.getProjectStates() != null && projectQuery.getProjectStates().length != 0){
+            sql1 = sql1.concat(" and project_state in ('" + StringUtils.join(projectQuery.getProjectStates(), "','") + "')");
+        }
+        if (projectQuery.getOverdue() != null && projectQuery.getOverdue()){
+            Date date = new Date();
+            SimpleDateFormat simpleDateFormat = new SimpleDateFormat("yyyy-MM-dd");
+            String currentTime = simpleDateFormat.format(date);
+            sql1 = sql1.concat(" and end_time <= '"+ currentTime + "' and project_state != '3'");
+        }
+        if (StringUtils.isNotBlank(projectQuery.getProjectSetId())){
+            sql1 = sql1.concat(" and project_set_id = '" + projectQuery.getProjectSetId() + "'");
+        }
+        if (StringUtils.isNotBlank(projectQuery.getProductId())){
+            sql1 = sql1.concat(" and product_id = '" + projectQuery.getProductId() + "'");
+        }
+
+        Integer total = jpaTemplate.getJdbcTemplate().queryForObject(sql1, new Object[]{}, Integer.class);
+        projectCount.put("total", total);
+
+        String sql2 = "SELECT count(1) as total from pmc_project where creator = '" + userId + "'";
+        if (StringUtils.isNotBlank(projectQuery.getProjectName())){
+            sql2 = sql2.concat(" and project_name like '%" + projectQuery.getProjectName() + "%'");
+        }
+        if (projectQuery.getProjectStates() != null && projectQuery.getProjectStates().length != 0){
+            sql2 = sql2.concat(" and project_state in ('" + StringUtils.join(projectQuery.getProjectStates(), "','") + "')");
+        }
+        if (projectQuery.getOverdue() != null && projectQuery.getOverdue()){
+            Date date = new Date();
+            SimpleDateFormat simpleDateFormat = new SimpleDateFormat("yyyy-MM-dd");
+            String currentTime = simpleDateFormat.format(date);
+            sql2 = sql2.concat(" and end_time <= '"+ currentTime + "' and project_state != '3'");
+        }
+        if (StringUtils.isNotBlank(projectQuery.getProjectSetId())){
+            sql2 = sql2.concat(" and project_set_id = '" + projectQuery.getProjectSetId() + "'");
+        }
+        if (StringUtils.isNotBlank(projectQuery.getProductId())){
+            sql2 = sql2.concat(" and product_id = '" + projectQuery.getProductId() + "'");
+        }
+        Integer myCreated = jpaTemplate.getJdbcTemplate().queryForObject(sql2, new Object[]{}, Integer.class);
+        projectCount.put("myCreated", myCreated);
+
+        String sql3 = "SELECT count(1) as total from pmc_project_focus pf left join pmc_project p on pf.project_id = p.id " +
+                "where pf.master_id = '" + userId + "'";
+        if (StringUtils.isNotBlank(projectQuery.getProjectName())){
+            sql3 = sql3.concat(" and p.project_name like '%" + projectQuery.getProjectName() + "%'");
+        }
+        if (projectQuery.getProjectStates() != null && projectQuery.getProjectStates().length != 0){
+            sql3 = sql3.concat(" and p.project_state in ('" + StringUtils.join(projectQuery.getProjectStates(), "','") + "')");
+        }
+        if (projectQuery.getOverdue() != null && projectQuery.getOverdue()){
+            Date date = new Date();
+            SimpleDateFormat simpleDateFormat = new SimpleDateFormat("yyyy-MM-dd");
+            String currentTime = simpleDateFormat.format(date);
+            sql3 = sql3.concat(" and p.end_time <= '"+ currentTime + "' and p.project_state != '3'");
+        }
+        if (StringUtils.isNotBlank(projectQuery.getProjectSetId())){
+            sql3 = sql3.concat(" and project_set_id = '" + projectQuery.getProjectSetId() + "'");
+        }
+        if (StringUtils.isNotBlank(projectQuery.getProductId())){
+            sql3 = sql3.concat(" and product_id = '" + projectQuery.getProductId() + "'");
+        }
+        Integer myFocus = jpaTemplate.getJdbcTemplate().queryForObject(sql3, new Object[]{}, Integer.class);
+        projectCount.put("myFocus", myFocus);
+        return projectCount;
     }
 }

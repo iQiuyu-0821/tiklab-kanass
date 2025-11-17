@@ -4,6 +4,7 @@ package io.tiklab.kanass.support.service;
 import io.tiklab.core.exception.ApplicationException;
 import io.tiklab.dal.jdbc.JdbcTemplate;
 import io.tiklab.dal.jpa.JpaTemplate;
+import io.tiklab.kanass.common.ErrorCode;
 import io.tiklab.kanass.home.insight.model.Insight;
 import io.tiklab.kanass.home.statistic.model.ProjectBurnDowmChart;
 import io.tiklab.kanass.home.statistic.model.Report;
@@ -34,7 +35,7 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 
 /**
-* 图标服务
+* 洗数据
 */
 @Service
 public class UpdateMySqlServiceImpl implements UpdateMySqlService {
@@ -49,6 +50,10 @@ public class UpdateMySqlServiceImpl implements UpdateMySqlService {
         updateMySqlDao.updateId();
     }
 
+
+    /**
+     * 洗数据
+     */
     @Override
     public void updateProject() {
         String sql = "select * from pmc_project";
@@ -58,6 +63,7 @@ public class UpdateMySqlServiceImpl implements UpdateMySqlService {
             String id = project.getId();
             try {
                 String newId = id.substring(0, 12);
+                // 更新项目id
                 sql = "UPDATE pmc_project" + " SET id = '" + newId + "' WHERE id = '" + id + "'";
                 jdbcTemplate.execute(sql);
 
@@ -130,7 +136,7 @@ public class UpdateMySqlServiceImpl implements UpdateMySqlService {
 
 
             }catch (Exception e){
-                throw new ApplicationException(2000,"项目id更新失败" + e.getMessage());
+                throw new ApplicationException(ErrorCode.CREATE_ERROR,"项目id更新失败" + e.getMessage());
             }
 
         }
@@ -153,7 +159,7 @@ public class UpdateMySqlServiceImpl implements UpdateMySqlService {
                 jdbcTemplate.execute(sql);
 
             }catch (Exception e){
-                throw new ApplicationException(2000,"更新失败" + e.getMessage());
+                throw new ApplicationException(ErrorCode.CREATE_ERROR,"更新失败" + e.getMessage());
             }
         }
     }
@@ -183,7 +189,7 @@ public class UpdateMySqlServiceImpl implements UpdateMySqlService {
                 jdbcTemplate.execute(sql);
 
             }catch (Exception e){
-                throw new ApplicationException(2000,"迭代更新失败" + e.getMessage());
+                throw new ApplicationException(ErrorCode.CREATE_ERROR,"迭代更新失败" + e.getMessage());
             }
         }
     }
@@ -204,7 +210,7 @@ public class UpdateMySqlServiceImpl implements UpdateMySqlService {
                 jdbcTemplate.execute(sql);
 
             }catch (Exception e){
-                throw new ApplicationException(2000,"迭代状态更新失败" + e.getMessage());
+                throw new ApplicationException(ErrorCode.CREATE_ERROR,"迭代状态更新失败" + e.getMessage());
             }
         }
     }
@@ -224,7 +230,7 @@ public class UpdateMySqlServiceImpl implements UpdateMySqlService {
                 sql = "UPDATE pmc_work_item" + " SET version_id = '" + newId + "' WHERE version_id = '" + id + "'";
                 jdbcTemplate.execute(sql);
             }catch (Exception e){
-                throw new ApplicationException(2000, "版本更新失败" + e.getMessage());
+                throw new ApplicationException(ErrorCode.CREATE_ERROR, "版本更新失败" + e.getMessage());
             }
         }
     }
@@ -252,7 +258,7 @@ public class UpdateMySqlServiceImpl implements UpdateMySqlService {
                 jdbcTemplate.execute(sql);
 
             }catch (Exception e){
-                throw new ApplicationException(2000,"事项文档id更新失败" + e.getMessage());
+                throw new ApplicationException(ErrorCode.CREATE_ERROR,"事项文档id更新失败" + e.getMessage());
             }
         }
     }
@@ -269,7 +275,7 @@ public class UpdateMySqlServiceImpl implements UpdateMySqlService {
                 sql = "UPDATE pmc_work_attach" + " SET id = '" + newId + "' WHERE id = '" + id + "'";
                 jdbcTemplate.execute(sql);
             }catch (Exception e){
-                throw new ApplicationException(2000,"事项附件id更新失败" + e.getMessage());
+                throw new ApplicationException(ErrorCode.CREATE_ERROR,"事项附件id更新失败" + e.getMessage());
             }
         }
     }
@@ -286,7 +292,7 @@ public class UpdateMySqlServiceImpl implements UpdateMySqlService {
                 sql = "UPDATE pmc_work_log" + " SET id = '" + newId + "' WHERE id = '" + id + "'";
                 jdbcTemplate.execute(sql);
             }catch (Exception e){
-                throw new ApplicationException(2000,"事项日志更新失败" + e.getMessage());
+                throw new ApplicationException(ErrorCode.CREATE_ERROR,"事项日志更新失败" + e.getMessage());
             }
         }
     }
@@ -306,7 +312,7 @@ public class UpdateMySqlServiceImpl implements UpdateMySqlService {
                 sql = "UPDATE pmc_work_item" + " SET work_priority_id = '" + newId + "' WHERE work_priority_id = '" + id + "'";
                 jdbcTemplate.execute(sql);
             }catch (Exception e){
-                throw new ApplicationException(2000,"事项优先级更新失败" + e.getMessage());
+                throw new ApplicationException(ErrorCode.CREATE_ERROR,"事项优先级更新失败" + e.getMessage());
             }
         }
     }
@@ -323,7 +329,7 @@ public class UpdateMySqlServiceImpl implements UpdateMySqlService {
                 sql = "UPDATE pmc_work_relate" + " SET id = '" + newId + "' WHERE id = '" + id + "'";
                 jdbcTemplate.execute(sql);
             }catch (Exception e){
-                throw new ApplicationException(2000,"事项优先级更新失败" + e.getMessage());
+                throw new ApplicationException(ErrorCode.CREATE_ERROR,"事项优先级更新失败" + e.getMessage());
             }
         }
     }
@@ -346,7 +352,7 @@ public class UpdateMySqlServiceImpl implements UpdateMySqlService {
                 sql = "UPDATE pmc_work_type_dm" + " SET work_type_id = '" + newId + "' WHERE work_type_id = '" + id + "'";
                 jdbcTemplate.execute(sql);
             }catch (Exception e){
-                throw new ApplicationException(2000,"事项优先级更新失败" + e.getMessage());
+                throw new ApplicationException(ErrorCode.CREATE_ERROR,"事项优先级更新失败" + e.getMessage());
             }
         }
     }
@@ -373,7 +379,7 @@ public class UpdateMySqlServiceImpl implements UpdateMySqlService {
                 jdbcTemplate.execute(sql);
 
             }catch (Exception e){
-                throw new ApplicationException(2000,"项目集更新失败" + e.getMessage());
+                throw new ApplicationException(ErrorCode.CREATE_ERROR,"项目集更新失败" + e.getMessage());
             }
         }
     }
@@ -397,7 +403,7 @@ public class UpdateMySqlServiceImpl implements UpdateMySqlService {
                 jdbcTemplate.execute(sql);
 
             }catch (Exception e){
-                throw new ApplicationException(2000,"史诗更新失败" + e.getMessage());
+                throw new ApplicationException(ErrorCode.CREATE_ERROR,"史诗更新失败" + e.getMessage());
             }
         }
     }
@@ -415,7 +421,7 @@ public class UpdateMySqlServiceImpl implements UpdateMySqlService {
                 jdbcTemplate.execute(sql);
 
             }catch (Exception e){
-                throw new ApplicationException(2000,"史诗更新失败" + e.getMessage());
+                throw new ApplicationException(ErrorCode.CREATE_ERROR,"史诗更新失败" + e.getMessage());
             }
         }
     }
@@ -433,7 +439,7 @@ public class UpdateMySqlServiceImpl implements UpdateMySqlService {
                 jdbcTemplate.execute(sql);
 
             }catch (Exception e){
-                throw new ApplicationException(2000,"图标更新失败" + e.getMessage());
+                throw new ApplicationException(ErrorCode.CREATE_ERROR,"图标更新失败" + e.getMessage());
             }
         }
     }
@@ -451,7 +457,7 @@ public class UpdateMySqlServiceImpl implements UpdateMySqlService {
                 jdbcTemplate.execute(sql);
 
             }catch (Exception e){
-                throw new ApplicationException(2000,"事项评论更新失败" + e.getMessage());
+                throw new ApplicationException(ErrorCode.CREATE_ERROR,"事项评论更新失败" + e.getMessage());
             }
         }
     }
@@ -469,7 +475,7 @@ public class UpdateMySqlServiceImpl implements UpdateMySqlService {
                 jdbcTemplate.execute(sql);
 
             }catch (Exception e){
-                throw new ApplicationException(2000,"项目报表更新失败" + e.getMessage());
+                throw new ApplicationException(ErrorCode.CREATE_ERROR,"项目报表更新失败" + e.getMessage());
             }
         }
     }
@@ -487,7 +493,7 @@ public class UpdateMySqlServiceImpl implements UpdateMySqlService {
                 jdbcTemplate.execute(sql);
 
             }catch (Exception e){
-                throw new ApplicationException(2000,"项目报表更新失败" + e.getMessage());
+                throw new ApplicationException(ErrorCode.CREATE_ERROR,"项目报表更新失败" + e.getMessage());
             }
         }
     }
@@ -505,7 +511,7 @@ public class UpdateMySqlServiceImpl implements UpdateMySqlService {
                 jdbcTemplate.execute(sql);
 
             }catch (Exception e){
-                throw new ApplicationException(2000,"项目报表更新失败" + e.getMessage());
+                throw new ApplicationException(ErrorCode.CREATE_ERROR,"项目报表更新失败" + e.getMessage());
             }
         }
     }
@@ -523,7 +529,7 @@ public class UpdateMySqlServiceImpl implements UpdateMySqlService {
                 jdbcTemplate.execute(sql);
 
             }catch (Exception e){
-                throw new ApplicationException(2000,"迭代燃尽图更新失败" + e.getMessage());
+                throw new ApplicationException(ErrorCode.CREATE_ERROR,"迭代燃尽图更新失败" + e.getMessage());
             }
         }
     }
@@ -541,7 +547,7 @@ public class UpdateMySqlServiceImpl implements UpdateMySqlService {
                 jdbcTemplate.execute(sql);
 
             }catch (Exception e){
-                throw new ApplicationException(2000,"里程碑更新失败" + e.getMessage());
+                throw new ApplicationException(ErrorCode.CREATE_ERROR,"里程碑更新失败" + e.getMessage());
             }
         }
     }
@@ -565,7 +571,7 @@ public class UpdateMySqlServiceImpl implements UpdateMySqlService {
                 jdbcTemplate.execute(sql);
 
             }catch (Exception e){
-                throw new ApplicationException(2000,"里程碑更新失败" + e.getMessage());
+                throw new ApplicationException(ErrorCode.CREATE_ERROR,"里程碑更新失败" + e.getMessage());
             }
         }
     }
@@ -583,7 +589,7 @@ public class UpdateMySqlServiceImpl implements UpdateMySqlService {
                 jdbcTemplate.execute(sql);
 
             }catch (Exception e){
-                throw new ApplicationException(2000,"计划的事项更新失败" + e.getMessage());
+                throw new ApplicationException(ErrorCode.CREATE_ERROR,"计划的事项更新失败" + e.getMessage());
             }
         }
     }
@@ -601,7 +607,7 @@ public class UpdateMySqlServiceImpl implements UpdateMySqlService {
                 jdbcTemplate.execute(sql);
 
             }catch (Exception e){
-                throw new ApplicationException(2000,"计划的事项更新失败" + e.getMessage());
+                throw new ApplicationException(ErrorCode.CREATE_ERROR,"计划的事项更新失败" + e.getMessage());
             }
         }
     }
@@ -619,7 +625,7 @@ public class UpdateMySqlServiceImpl implements UpdateMySqlService {
                 jdbcTemplate.execute(sql);
 
             }catch (Exception e){
-                throw new ApplicationException(2000,"项目燃尽图更新失败" + e.getMessage());
+                throw new ApplicationException(ErrorCode.CREATE_ERROR,"项目燃尽图更新失败" + e.getMessage());
             }
         }
     }
@@ -637,7 +643,7 @@ public class UpdateMySqlServiceImpl implements UpdateMySqlService {
                 jdbcTemplate.execute(sql);
 
             }catch (Exception e){
-                throw new ApplicationException(2000,"项目燃尽图更新失败" + e.getMessage());
+                throw new ApplicationException(ErrorCode.CREATE_ERROR,"项目燃尽图更新失败" + e.getMessage());
             }
         }
     }
@@ -655,7 +661,7 @@ public class UpdateMySqlServiceImpl implements UpdateMySqlService {
                 jdbcTemplate.execute(sql);
 
             }catch (Exception e){
-                throw new ApplicationException(2000,"项目燃尽图更新失败" + e.getMessage());
+                throw new ApplicationException(ErrorCode.CREATE_ERROR,"项目燃尽图更新失败" + e.getMessage());
             }
         }
     }
@@ -673,7 +679,7 @@ public class UpdateMySqlServiceImpl implements UpdateMySqlService {
                 jdbcTemplate.execute(sql);
 
             }catch (Exception e){
-                throw new ApplicationException(2000,"项目燃尽图更新失败" + e.getMessage());
+                throw new ApplicationException(ErrorCode.CREATE_ERROR,"项目燃尽图更新失败" + e.getMessage());
             }
         }
     }
@@ -697,7 +703,7 @@ public class UpdateMySqlServiceImpl implements UpdateMySqlService {
                 jdbcTemplate.execute(sql);
 
             }catch (Exception e){
-                throw new ApplicationException(2000,"项目阶段更新失败" + e.getMessage());
+                throw new ApplicationException(ErrorCode.CREATE_ERROR,"项目阶段更新失败" + e.getMessage());
             }
         }
     }
@@ -715,7 +721,7 @@ public class UpdateMySqlServiceImpl implements UpdateMySqlService {
                 jdbcTemplate.execute(sql);
 
             }catch (Exception e){
-                throw new ApplicationException(2000,"项目阶段更新失败" + e.getMessage());
+                throw new ApplicationException(ErrorCode.CREATE_ERROR,"项目阶段更新失败" + e.getMessage());
             }
         }
     }

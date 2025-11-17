@@ -2,6 +2,10 @@ package io.tiklab.kanass.project.stage.service;
 
 import io.tiklab.dal.jpa.criterial.condition.DeleteCondition;
 import io.tiklab.dal.jpa.criterial.conditionbuilder.DeleteBuilders;
+import io.tiklab.kanass.project.appraised.model.Appraised;
+import io.tiklab.kanass.project.appraised.model.AppraisedQuery;
+import io.tiklab.kanass.project.appraised.service.AppraisedService;
+import io.tiklab.kanass.project.project.service.ProjectService;
 import io.tiklab.kanass.workitem.model.WorkItem;
 import io.tiklab.kanass.workitem.model.WorkItemQuery;
 import io.tiklab.kanass.workitem.service.WorkItemService;
@@ -14,6 +18,7 @@ import io.tiklab.kanass.project.stage.model.StageQuery;
 import io.tiklab.kanass.project.stage.dao.StageDao;
 import io.tiklab.kanass.project.stage.entity.StageEntity;
 
+import org.apache.commons.collections4.CollectionUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -21,11 +26,12 @@ import javax.validation.Valid;
 import javax.validation.constraints.NotNull;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 import java.util.stream.Collectors;
 
 /**
-* 项目阶段服务
+*  阶段接口
 */
 @Service
 public class StageServiceImpl implements StageService {
@@ -42,6 +48,7 @@ public class StageServiceImpl implements StageService {
     @Autowired
     JoinTemplate joinTemplate;
 
+
     @Override
     public String createStage(@NotNull @Valid Stage stage) {
         int color = new Random().nextInt(3) + 1;
@@ -52,6 +59,7 @@ public class StageServiceImpl implements StageService {
         String stageId = stageDao.createStage(stageEntity);
         stageEntity.setId(stageId);
 
+        // 设置阶段的上级节点，节点树，根节点，深度
         if(stage.getParentStage() != null && stage.getParentStage().getId() != "nullstring"){
             String id = stage.getParentStage().getId();
             Stage stageParent = findStage(id);
@@ -82,6 +90,7 @@ public class StageServiceImpl implements StageService {
         Integer deep = oldStage.getDeep();
         // 如果更新上级
         if(isChangeParent){
+            // 更新上级节点为其他阶段
             if(stage.getParentStage() != null && !stage.getParentStage().getId().equals("nullstring")){
                 String parentId = stage.getParentStage().getId();
                 Stage stageParent = findStage(parentId);
@@ -91,8 +100,8 @@ public class StageServiceImpl implements StageService {
                 Integer newDeep = stageParent.getDeep() + 1;
                 Integer distance = newDeep - deep;
                 stage.setDeep(stageParent.getDeep() + 1);
-                // 更新当前事项的所有下级
 
+                // 更新当前阶段的所有下级
                 StageQuery stageQuery = new StageQuery();
                 stageQuery.setTreePath(id);
                 List<Stage> stageList = findStageList(stageQuery);
@@ -114,7 +123,8 @@ public class StageServiceImpl implements StageService {
 
             }
 
-            if(stage.getParentStage() != null && stage.getParentStage().getId().equals("nullstring") ){
+            // 更新上级阶段为空
+            if(stage.getParentStage() == null && stage.getParentStage().getId().equals("nullstring") ){
                 stage.setTreePath("nullstring");
                 stage.setRootId(id);
                 stage.setDeep(0);
@@ -164,11 +174,19 @@ public class StageServiceImpl implements StageService {
 
 
     }
+
+    /**
+     * 根据条件删除阶段
+     * @param stageQuery
+     */
     public void deleteStageCondition(StageQuery stageQuery){
-        DeleteCondition deleteCondition = DeleteBuilders.createDelete(StageEntity.class)
-                .eq("id", stageQuery.getId())
-                .in("id", stageQuery.getIds())
-                .get();
+        DeleteBuilders deleteBuilders = DeleteBuilders.createDelete(StageEntity.class)
+                .eq("id", stageQuery.getId());
+
+        if(stageQuery.getIds() != null && stageQuery.getIds().length != 0){
+            deleteBuilders.in("id", stageQuery.getIds());
+        }
+        DeleteCondition deleteCondition = deleteBuilders.get();
         stageDao.deleteStageCondition(deleteCondition);
     }
 
@@ -192,7 +210,7 @@ public class StageServiceImpl implements StageService {
     public Stage findStage(@NotNull String id) {
         Stage stage = findOne(id);
 
-        joinTemplate.joinQuery(stage);
+        joinTemplate.joinQuery(stage, new String[]{"parentStage", "project", "master"});
 
         return stage;
     }
@@ -203,7 +221,7 @@ public class StageServiceImpl implements StageService {
 
         List<Stage> stageList =  BeanMapper.mapList(stageEntityList,Stage.class);
 
-        joinTemplate.joinQuery(stageList);
+        joinTemplate.joinQuery(stageList, new String[]{"parentStage", "project", "master"});
 
         return stageList;
     }
@@ -214,7 +232,7 @@ public class StageServiceImpl implements StageService {
 
         List<Stage> stageList = BeanMapper.mapList(stageEntityList,Stage.class);
 
-        joinTemplate.joinQuery(stageList);
+        joinTemplate.joinQuery(stageList, new String[]{"parentStage", "project", "master"});
 
         return stageList;
     }
@@ -226,17 +244,20 @@ public class StageServiceImpl implements StageService {
 
         List<Stage> stageList = BeanMapper.mapList(pagination.getDataList(),Stage.class);
 
-        joinTemplate.joinQuery(stageList);
+        joinTemplate.joinQuery(stageList, new String[]{"parentStage", "project", "master"});
 
         return PaginationBuilder.build(pagination,stageList);
     }
 
     @Override
     public Pagination<Stage> findStageListTreePage(StageQuery stageQuery) {
+        //设置查询条件
         stageQuery.setStageParentNull(true);
+        //查询一级阶段分页数据
         Pagination<Stage> stagePage = findStagePage(stageQuery);
         List<Stage> stageList = stagePage.getDataList();
         if(stageList.size() > 0){
+            //提取一级阶段的id列表
             List<String> stageIdList = stageList.stream().map(stage -> stage.getId()).collect(Collectors.toList());
             // 根据第一级阶段的ids 查找下级的所有阶段和事项
             String[] stageIds = stageIdList.toArray(new String[stageIdList.size()]);
@@ -245,6 +266,7 @@ public class StageServiceImpl implements StageService {
             List<Stage> stageListChildren = findStageList(stageQuery);
 
             if(stageListChildren.size() > 0){
+                //提取下级阶段的 id 列表，并将其合并到 stageIdList 中
                 List<String> stageListChildrenIdList = stageListChildren.stream().map(stage -> stage.getId()).collect(Collectors.toList());
                 stageIdList.addAll(stageListChildrenIdList);
 
@@ -252,7 +274,7 @@ public class StageServiceImpl implements StageService {
                 String[] allStageIds = stageIdList.toArray(new String[stageIdList.size()]);
                 workItemQuery.setStageIds(allStageIds);
                 List<WorkItem> workItemList = workItemService.findWorkItemListTree(workItemQuery);
-                //
+                //遍历一级阶段列表，调用 setStageTree 方法为每个阶段设置子阶段和子工作项
                 for (Stage stage : stageList) {
                     setStageTree(stage, stageListChildren, workItemList);
                 }
@@ -267,7 +289,43 @@ public class StageServiceImpl implements StageService {
             }
         }
 
+        // 计算进度
+        for (Stage stage : stageList) {
+            calcStageProgress(stage);
+        }
+
         return stagePage;
+    }
+
+    private void calcStageProgress(Stage stage){
+        int doneWorkCount = 0;
+        int totalWorkCount = 0;
+        if (stage.getChildrenWorkItem() != null){
+            for (WorkItem workItem : stage.getChildrenWorkItem()) {
+                totalWorkCount++;
+                if(workItem.getWorkStatusCode().equals("DONE")){
+                    doneWorkCount++;
+                }
+            }
+        }
+
+        // 查询子stage
+        if (stage.getChildren() != null) {
+            for (Stage childStage : stage.getChildren()) {
+                calcStageProgress(childStage); // 递归计算子 Stage
+                totalWorkCount += childStage.getTotalWorkCount();
+                doneWorkCount += childStage.getDoneWorkCount();
+            }
+        }
+
+        if (totalWorkCount > 0){
+            stage.setProgress(doneWorkCount * 100 / totalWorkCount);
+        }else {
+            stage.setProgress(0);
+        }
+
+        stage.setTotalWorkCount(totalWorkCount);
+        stage.setDoneWorkCount(doneWorkCount);
     }
 
     @Override

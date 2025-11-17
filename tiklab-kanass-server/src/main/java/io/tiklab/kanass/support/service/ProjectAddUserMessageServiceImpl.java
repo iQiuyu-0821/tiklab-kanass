@@ -12,7 +12,7 @@ import io.tiklab.message.setting.model.MessageType;
 import io.tiklab.user.dmUser.model.DmUser;
 import io.tiklab.user.dmUser.service.DmUserCallbackServiceImpl;
 import io.tiklab.user.user.model.User;
-import io.tiklab.user.user.service.UserService;
+import io.tiklab.user.user.service.UserProcessor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Primary;
@@ -37,7 +37,7 @@ public class ProjectAddUserMessageServiceImpl extends DmUserCallbackServiceImpl 
     ProjectSetService projectSetService;
 
     @Autowired
-    UserService userService;
+    UserProcessor userProcessor;
 
     @Autowired
     SendMessageNoticeService sendMessageNoticeService;
@@ -45,15 +45,20 @@ public class ProjectAddUserMessageServiceImpl extends DmUserCallbackServiceImpl 
     @Value("${base.url:null}")
     String baseUrl;
 
+
+    /**
+     * 重写方法，发送创建项目或者项目集的消息给相关人员
+     * @param dmUser
+     */
     @Override
     public void dmUserCallback(DmUser dmUser) {
         String domainId = dmUser.getDomainId();
         User user = dmUser.getUser();
         String id = user.getId();
-        user = userService.findUser(id);
+        user = userProcessor.findUser(id);
         Project project = projectService.findProject(domainId);
         if(project != null){
-            creatPojectMessage(user, project);
+            creatProjectMessage(user, project);
         }
 
         ProjectSet projectSet = projectSetService.findProjectSet(domainId);
@@ -62,14 +67,19 @@ public class ProjectAddUserMessageServiceImpl extends DmUserCallbackServiceImpl 
         }
     }
 
-    void creatPojectMessage(User user, Project project){
+    /**
+     * 创建项目发送消息
+     * @param user
+     * @param project
+     */
+    void creatProjectMessage(User user, Project project){
         HashMap<String, Object> content = new HashMap<>();
         content.put("projectName", project.getProjectName());
         content.put("projectId", project.getId());
         content.put("projectIcon", project.getIconUrl());
 
         String createUserId = LoginContext.getLoginId();
-        User createUser = userService.findOne(createUserId);
+        User createUser = userProcessor.findOne(createUserId);
         content.put("createUser", createUser);
         content.put("createUserIcon", user.getNickname().substring( 0, 1).toUpperCase());
         content.put("receiveTime", new SimpleDateFormat("MM-dd").format(new Date()));
@@ -82,7 +92,7 @@ public class ProjectAddUserMessageServiceImpl extends DmUserCallbackServiceImpl 
 
         Message message = new Message();
         MessageType messageType = new MessageType();
-        messageType.setId("KANASS_MESSAGETYPE_JOINPROJECT");
+        messageType.setId("KANASS_JOINPROJECT");
         message.setMessageType(messageType);
         message.setMessageReceiverList(objects);
         message.setBaseUrl(baseUrl);
@@ -99,13 +109,18 @@ public class ProjectAddUserMessageServiceImpl extends DmUserCallbackServiceImpl 
         sendMessageNoticeService.sendMessage(message);
     }
 
+    /**
+     * 创建项目集发送消息
+     * @param user
+     * @param projectSet
+     */
     void creatPojectSetMessage(User user, ProjectSet projectSet){
         HashMap<String, Object> content = new HashMap<>();
         content.put("projectSetName", projectSet.getName());
         content.put("projectSetId", projectSet.getId());
 
         String createUserId = LoginContext.getLoginId();
-        User createUser = userService.findOne(createUserId);
+        User createUser = userProcessor.findOne(createUserId);
         content.put("createUser", createUser);
         content.put("createUserIcon", user.getNickname().substring( 0, 1).toUpperCase());
         content.put("receiveTime", new SimpleDateFormat("MM-dd").format(new Date()));
@@ -118,7 +133,7 @@ public class ProjectAddUserMessageServiceImpl extends DmUserCallbackServiceImpl 
 
         Message message = new Message();
         MessageType messageType = new MessageType();
-        messageType.setId("KANASS_MESSAGETYPE_JOINPROSET");
+        messageType.setId("KANASS_JOINPROSET");
         message.setMessageType(messageType);
         message.setMessageReceiverList(objects);
         message.setBaseUrl(baseUrl);

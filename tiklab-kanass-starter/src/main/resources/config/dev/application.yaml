@@ -1,7 +1,6 @@
 #系统名称
 app:
-  name: tiklab-kanass
-
+  name: kanass
 # 环境
 spring:
   profiles:
@@ -15,100 +14,65 @@ spring:
 server:
   port: 8080
 
+DATA_HOME: ${user.home}/tiklab/tiklab-kanass
 
+#db
 jdbc:
   driverClassName: org.postgresql.Driver
-  url: jdbc:postgresql://172.10.1.10:5432/thoughtware_kanass?stringtype=unspecified
-#  url: jdbc:postgresql://172.13.1.17:5432/teamwire_ee?stringtype=unspecified
+  url: jdbc:postgresql://172.10.1.10:5432/tiklab_kanass_test?stringtype=unspecified
   username: postgres
   password: darth2020
 
+#jdbc:
+#  driverClassName: com.mysql.cj.jdbc.Driver
+#  url: jdbc:mysql://172.10.1.10:3306/tiklab_kanass?characterEncoding=utf8&useSSL=false
+#  username: root
+#  password: darth2020
 
 postgresql:
-  type: local
   embbed:
     enable: false
-  database: tiklab_kanass
+  database: tiklab_kanass_test
+  db:
+    port: 5432
+    username: postgres
+    password: darth2020
+    address: ${DATA_HOME}/postgresql
 
-# 访问地址，用于显示日志，消息，待办的图标
-base:
-  url: http://192.168.10.7:8080
 
-
-DATA_HOME: ${user.home}/tiklab/kanass
-
-#dfs config
+#dfs config分布式
 dfs:
   server:
     enabled: true
-    port: 4000
+    port: 4010
     datapath: ${DATA_HOME}/files
   client:
-    url: 127.0.0.1:4000
+    url: 127.0.0.1:4010
     group: g1
     bucket: kanass
 
-#dcs config
+#dcs config分布式缓存
 dcs:
   server:
     enabled: true
-    port: 5000
+    port: 5010
     datapath: ${DATA_HOME}/caches
   client:
-    url: 127.0.0.1:5000
+    url: 127.0.0.1:5010
     group: g1
     database: dcs1
     expire: 7200
-#address: http://soular.local.kanass.net
-#  address: http://soular.dev.kanass.net
-soular:
-  embbed:
-    enable: true
-  web:
-    address: http://192.168.10.16:3010
-  address: http://192.168.10.42:8080
 
-# homes 地址
-#homes:
-#  address: http://192.168.10.25:8080
+auth:
+  type: local
+  soular:
+    address: http://192.168.10.20:9100
+    web:
+      address: http://192.168.10.16:3010
 
-#plugin config
-plugin:
-  path: ${DATA_HOME}/plugin
+# 访问地址，用于显示日志，消息，待办的图标
+external:
+  url: http://192.168.10.7:8080
 
-#zip config
-unzip:
-  path: ${DATA_HOME}/unzip/Jira
-
-#证书文件路径
-licences:
-  path: ${APP_HOME}/licences
-
-client: web
-version: ce
-
-homes:
-  address: http://192.168.10.6:8070
-
-file:
-  path: http://file.dev.kanass.io
-
-user:
-  home: ${user.home}
-
-postin:
-  enable: false
-  scan:
-    package: io.tiklab
-  report:
-    workspaceId: b4a2fc3a3d73
-    server: http://192.168.10.3:8090
-
-backups:
-  pgsql:
-    dir: /opt/homebrew/opt/postgresql@15/bin
-  time: 0 0 2 * * ?
-  dir: ${DATA_HOME}
-  dfs:
-    dir: ${DATA_HOME}/files
-
+version:
+  check: dGlrbGFidGlrbGFi

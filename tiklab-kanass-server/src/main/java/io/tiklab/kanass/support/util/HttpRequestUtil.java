@@ -3,9 +3,11 @@ package io.tiklab.kanass.support.util;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import io.tiklab.core.exception.ApplicationException;
+import io.tiklab.core.exception.ErrorCodeConstants;
 import io.tiklab.core.exception.SystemException;
 import io.tiklab.core.page.Pagination;
 import io.tiklab.core.page.PaginationBuilder;
+import io.tiklab.kanass.common.ErrorCode;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.*;
 import org.springframework.stereotype.Component;
@@ -26,6 +28,34 @@ public class HttpRequestUtil {
     @Autowired
     HttpRequestUtil requestUtil;
 
+    /**
+     * 发起Post请求
+     * @param headers 请求头
+     * @param requestUrl 请求地址
+     * @param param 请求参数
+     * @return 请求结果
+     * @throws ApplicationException 请求失败
+     */
+    public JSONObject sendPost(HttpHeaders headers, String requestUrl, JSONObject param){
+        headers.set("accessToken", "dGlrbGFi");
+
+        // 创建带有头部和请求体的 HttpEntity
+        HttpEntity<Object> requestEntity = new HttpEntity<>(param, headers);
+        ResponseEntity<JSONObject> response;
+        try {
+            response = restTemplate.exchange(requestUrl, HttpMethod.POST, requestEntity, JSONObject.class);
+        }catch (ResourceAccessException e){
+            boolean timedOut = Objects.requireNonNull(e.getMessage()).contains("Read timed out");
+            boolean connectOut = Objects.requireNonNull(e.getMessage()).contains("Connect timed out");
+            if (timedOut || connectOut){
+                throw new ApplicationException(ErrorCodeConstants.TIMEOUT_EXCEPTION,"请求超时！");
+            }
+            throw new SystemException(e);
+        }
+
+        JSONObject jsonObject = response.getBody();
+        return jsonObject;
+    }
 
     /**
      * 发起Post请求
@@ -37,7 +67,7 @@ public class HttpRequestUtil {
      * @throws ApplicationException 请求失败
      */
     public <T> T requestPost(HttpHeaders headers, String requestUrl, Object param, Class<T> tClass){
-
+        headers.set("accessToken", "dGlrbGFi");
         // 创建带有头部和请求体的 HttpEntity
         HttpEntity<Object> requestEntity = new HttpEntity<>(param, headers);
         ResponseEntity<JSONObject> response;
@@ -47,7 +77,7 @@ public class HttpRequestUtil {
             boolean timedOut = Objects.requireNonNull(e.getMessage()).contains("Read timed out");
             boolean connectOut = Objects.requireNonNull(e.getMessage()).contains("Connect timed out");
             if (timedOut || connectOut){
-                throw new ApplicationException(50001,"请求超时！");
+                throw new ApplicationException(ErrorCodeConstants.TIMEOUT_EXCEPTION,"请求超时！");
             }
             throw new SystemException(e);
         }
@@ -57,7 +87,7 @@ public class HttpRequestUtil {
     }
 
     public <T> List<T> requestPostList(HttpHeaders headers, String requestUrl, Object param, Class<T> tClass){
-
+        headers.set("accessToken", "dGlrbGFi");
         // 创建带有头部和请求体的 HttpEntity
         HttpEntity<Object> requestEntity = new HttpEntity<>(param, headers);
 
@@ -68,7 +98,7 @@ public class HttpRequestUtil {
             boolean timedOut = Objects.requireNonNull(e.getMessage()).contains("Read timed out");
             boolean connectOut = Objects.requireNonNull(e.getMessage()).contains("Connect timed out");
             if (timedOut || connectOut){
-                throw new ApplicationException(50001,"请求超时！");
+                throw new ApplicationException(ErrorCodeConstants.TIMEOUT_EXCEPTION,"请求超时！");
             }
             throw new SystemException(e);
         }
@@ -78,7 +108,7 @@ public class HttpRequestUtil {
 
 
     public <T> Pagination<T> requestPostPage(HttpHeaders headers, String requestUrl, Object param, Class<T> tClass){
-
+        headers.set("accessToken", "dGlrbGFi");
         // 创建带有头部和请求体的 HttpEntity
         HttpEntity<Object> requestEntity = new HttpEntity<>(param, headers);
 
@@ -89,7 +119,7 @@ public class HttpRequestUtil {
             boolean timedOut = Objects.requireNonNull(e.getMessage()).contains("Read timed out");
             boolean connectOut = Objects.requireNonNull(e.getMessage()).contains("Connect timed out");
             if (timedOut || connectOut){
-                throw new ApplicationException(50001,"请求超时！");
+                throw new ApplicationException(ErrorCodeConstants.TIMEOUT_EXCEPTION,"请求超时！");
             }
             throw new SystemException(e);
         }
@@ -106,7 +136,7 @@ public class HttpRequestUtil {
      * @throws ApplicationException 请求失败
      */
     public <T> T requestGet(HttpHeaders headers, String requestUrl, Object param, Class<T> tClass){
-
+        headers.set("accessToken", "dGlrbGFi");
         // 创建带有头部和请求体的 HttpEntity
         HttpEntity<Object> requestEntity = new HttpEntity<>(param, headers);
 
@@ -117,7 +147,7 @@ public class HttpRequestUtil {
             boolean timedOut = Objects.requireNonNull(e.getMessage()).contains("Read timed out");
             boolean connectOut = Objects.requireNonNull(e.getMessage()).contains("Connect timed out");
             if (timedOut || connectOut){
-                throw new ApplicationException(50001,"请求超时！");
+                throw new ApplicationException(ErrorCodeConstants.TIMEOUT_EXCEPTION,"请求超时！");
             }
             throw new RuntimeException();
         }
@@ -127,7 +157,7 @@ public class HttpRequestUtil {
     }
 
     public <T> List<T> requestGetList(HttpHeaders headers, String requestUrl, Object param, Class<T> tClass){
-
+        headers.set("accessToken", "dGlrbGFi");
         // 创建带有头部和请求体的 HttpEntity
         HttpEntity<Object> requestEntity = new HttpEntity<>(param, headers);
 
@@ -138,7 +168,7 @@ public class HttpRequestUtil {
             boolean timedOut = Objects.requireNonNull(e.getMessage()).contains("Read timed out");
             boolean connectOut = Objects.requireNonNull(e.getMessage()).contains("Connect timed out");
             if (timedOut || connectOut){
-                throw new ApplicationException(50001,"请求超时！");
+                throw new ApplicationException(ErrorCodeConstants.TIMEOUT_EXCEPTION,"请求超时！");
             }
             throw new SystemException(e);
         }
@@ -156,7 +186,7 @@ public class HttpRequestUtil {
      */
     private <T> T findBody(JSONObject jsonObject,Class<T> tClass){
         if (Objects.isNull(jsonObject)){
-            throw new ApplicationException(50001,"获取接口返回数据为空！");
+            throw new ApplicationException(ErrorCode.OTHER_ERROR,"获取接口返回数据为空！");
         }
         Integer code = jsonObject.getInteger("code");
         if (code != 0){

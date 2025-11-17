@@ -11,7 +11,7 @@ import io.tiklab.kanass.home.insight.dao.InsightDao;
 import io.tiklab.kanass.home.insight.entity.InsightEntity;
 
 import io.tiklab.user.user.model.User;
-import io.tiklab.user.user.service.UserService;
+import io.tiklab.user.user.service.UserProcessor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -32,17 +32,17 @@ public class InsightServiceImpl implements InsightService {
     JoinTemplate joinTemplate;
 
     @Autowired
-    UserService userService;
+    UserProcessor userProcessor;
 
     @Override
     public String createInsight(@NotNull @Valid Insight insight) {
-        String createUserId = LoginContext.getLoginId();
-        User user = userService.findOne(createUserId);
-        insight.setMaster(user);
+        String createUserId = LoginContext.getLoginId();// 获取当前登录用户id
+        User user = userProcessor.findOne(createUserId);//根据用户id查询用户信息
+        insight.setMaster(user);//设置仪表盘的所有者
 
-        InsightEntity insightEntity = BeanMapper.map(insight, InsightEntity.class);
+        InsightEntity insightEntity = BeanMapper.map(insight, InsightEntity.class);//将仪表盘对象映射为实体对象
 
-        return insightDao.createInsight(insightEntity);
+        return insightDao.createInsight(insightEntity);//调用dao层创建仪表盘
     }
 
     @Override
@@ -57,6 +57,11 @@ public class InsightServiceImpl implements InsightService {
         insightDao.deleteInsight(id);
     }
 
+    /**
+     * 根据id查找某一个并返回仪表盘对象
+     * @param id
+     * @return
+     */
     @Override
     public Insight findOne(String id) {
         InsightEntity insightEntity = insightDao.findInsight(id);
@@ -65,74 +70,103 @@ public class InsightServiceImpl implements InsightService {
         return insight;
     }
 
+    /**
+     * 根据id列表查找并返回仪表盘对象列表
+     * @param idList
+     * @return
+     */
     @Override
     public List<Insight> findList(List<String> idList) {
         List<InsightEntity> insightEntityList =  insightDao.findInsightList(idList);
-
+        // 将实体对象列表映射为仪表盘对象列表
         List<Insight> insightList =  BeanMapper.mapList(insightEntityList,Insight.class);
         return insightList;
     }
 
+    /**
+     * 根据id查找并返回仪表盘对象
+     * @param id
+     * @return
+     */
     @Override
     public Insight findInsight(@NotNull String id) {
         Insight insight = findOne(id);
 
-        joinTemplate.joinQuery(insight);
+        joinTemplate.joinQuery(insight, new String[]{"master"});
 
         return insight;
     }
 
+    /**
+     * 查找所有仪表盘
+     * @return
+     */
     @Override
     public List<Insight> findAllInsight() {
         List<InsightEntity> insightEntityList =  insightDao.findAllInsight();
 
         List<Insight> insightList =  BeanMapper.mapList(insightEntityList,Insight.class);
 
-        joinTemplate.joinQuery(insightList);
+        joinTemplate.joinQuery(insightList, new String[]{"master"});
 
         return insightList;
     }
 
+    /**
+     * 根据查询条件查找并返回仪表盘对象列表
+     * @param insightQuery
+     * @return
+     */
     @Override
     public List<Insight> findInsightList(InsightQuery insightQuery) {
         List<InsightEntity> insightEntityList = insightDao.findInsightList(insightQuery);
 
         List<Insight> insightList = BeanMapper.mapList(insightEntityList,Insight.class);
 
-        joinTemplate.joinQuery(insightList);
+        joinTemplate.joinQuery(insightList, new String[]{"master"});
 
         return insightList;
     }
 
+    /**
+     * 根据查询条件查找并返回仪表盘对象分页
+     * @param insightQuery
+     * @return
+     */
     @Override
     public Pagination<Insight> findInsightPage(InsightQuery insightQuery) {
         Pagination<InsightEntity>  pagination = insightDao.findInsightPage(insightQuery);
 
         List<Insight> insightList = BeanMapper.mapList(pagination.getDataList(),Insight.class);
 
-        joinTemplate.joinQuery(insightList);
+        joinTemplate.joinQuery(insightList, new String[]{"master"});
 
         return PaginationBuilder.build(pagination,insightList);
     }
 
     /**
-     * 查找我最近查看的仪表盘
+     * 根据当前登录用户查询其最近查看的 Insight 列表，并返回处理后的结果
      * @param insightQuery
      * @return
      */
     public List<Insight> findRecentInsightList(InsightQuery insightQuery) {
-        String userId = LoginContext.getLoginId();
-        insightQuery.setMasterId(userId);
+        String userId = LoginContext.getLoginId();// 获取当前登录用户id
+        insightQuery.setMasterId(userId);//设置当前登录用户id
 
         List<InsightEntity> recentInsightList = insightDao.findRecentInsightList(insightQuery);
 
         List<Insight> insightList = BeanMapper.mapList(recentInsightList,Insight.class);
 
-        joinTemplate.joinQuery(insightList);
+        joinTemplate.joinQuery(insightList, new String[]{"master"});// 关联查询
 
         return insightList;
     }
 
+    /**
+     * 根据当前登录用户查询其关注的 Insight 列表，并返回处理后的结果
+     * @param insightQuery
+     * @return
+     */
     public List<Insight> findFocusInsightList(InsightQuery insightQuery) {
         String userId = LoginContext.getLoginId();
         insightQuery.setMasterId(userId);
@@ -141,7 +175,7 @@ public class InsightServiceImpl implements InsightService {
 
         List<Insight> insightList = BeanMapper.mapList(recentInsightList,Insight.class);
 
-        joinTemplate.joinQuery(insightList);
+        joinTemplate.joinQuery(insightList, new String[]{"master"});
 
         return insightList;
     }

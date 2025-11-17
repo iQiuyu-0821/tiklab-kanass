@@ -27,7 +27,7 @@ import javax.validation.constraints.NotNull;
 import java.util.*;
 
 /**
-* 事项优先级服务
+* 事项权限服务，弃用
 */
 @Service
 public class WorkRoleFunctionServiceImpl implements WorkRoleFunctionService {
@@ -96,7 +96,6 @@ public class WorkRoleFunctionServiceImpl implements WorkRoleFunctionService {
             workRoleFunction.setFunctionId(functionId);
             createWorkRoleFunction(workRoleFunction);
         }
-
     }
 
     @Override

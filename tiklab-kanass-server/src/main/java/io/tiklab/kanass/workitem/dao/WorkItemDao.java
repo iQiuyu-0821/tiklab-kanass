@@ -4,7 +4,10 @@ import io.tiklab.core.exception.ApplicationException;
 import io.tiklab.core.exception.SystemException;
 import io.tiklab.core.order.Order;
 import io.tiklab.core.order.OrderTypeEnum;
+import io.tiklab.dal.datasource.holder.DynamicDataSourceKeyHolder;
 import io.tiklab.dal.jpa.criterial.condition.DeleteCondition;
+import io.tiklab.kanass.common.ErrorCode;
+import io.tiklab.kanass.common.JdbcTypeCheckUtil;
 import io.tiklab.kanass.project.epic.entity.EpicWorkItemEntity;
 import io.tiklab.kanass.project.plan.entity.PlanWorkItemEntity;
 import io.tiklab.kanass.workitem.entity.WorkItemEntity;
@@ -16,10 +19,13 @@ import io.tiklab.dal.jpa.criterial.condition.OrQueryCondition;
 import io.tiklab.dal.jpa.criterial.condition.QueryCondition;
 import io.tiklab.dal.jpa.criterial.conditionbuilder.OrQueryBuilders;
 import io.tiklab.dal.jpa.criterial.conditionbuilder.QueryBuilders;
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.BeanPropertyRowMapper;
 import org.springframework.stereotype.Repository;
 import org.springframework.util.ObjectUtils;
@@ -41,6 +47,9 @@ public class WorkItemDao{
     @Autowired
     JpaTemplate jpaTemplate;
 
+    @Autowired
+    private JdbcTypeCheckUtil jdbcTypeCheckUtil;
+
     /**
      * 创建事项
      * @param workItemEntity
@@ -55,6 +64,8 @@ public class WorkItemDao{
      * @param workItemEntity
      */
     public void updateWorkItem(WorkItemEntity workItemEntity){
+        String dataSourceKey = DynamicDataSourceKeyHolder.getDataSourceKey();
+        logger.info("dataSourceKey: " + dataSourceKey);
         jpaTemplate.update(workItemEntity);
     }
 
@@ -143,6 +154,8 @@ public class WorkItemDao{
                 .like("wi.title",workItemQuery.getTitle())
                 .eq("wi.projectId",workItemQuery.getProjectId())
                 .in("wi.parentId", workItemQuery.getParentIdIn())
+                .in("wi.stageId", workItemQuery.getStageIds())
+                .notIn("wi.id", workItemQuery.getIdNotIn())
                 .eq("wi.parentId", workItemQuery.getParentId())
                 .eq("wi.versionId", workItemQuery.getCurrentVersionId())
                 .eq("wi.workTypeId", workItemQuery.getWorkTypeId())
@@ -152,11 +165,11 @@ public class WorkItemDao{
                 .eq("wi.workTypeCode", workItemQuery.getWorkTypeCode())
                 .eq("wi.sprintId", workItemQuery.getCurrentSprintId())
                 .eq("wi,stageId", workItemQuery.getStageId())
-                .in("wi.stageId", workItemQuery.getStageIds())
-                .in("wi.id", workItemQuery.getIds())
-                .notIn("wi.id", workItemQuery.getIdNotIn())
                 .orders(workItemQuery.getOrderParams());
 
+        if(workItemQuery.getIds() != null && workItemQuery.getIds().length != 0 ){
+            queryBuilders.in("wi.id", workItemQuery.getIds());
+        }
         //是否属于项目版本
         if(workItemQuery.getVersionIdIsNull() != null) {
             if(workItemQuery.getVersionIdIsNull() == true){
@@ -218,6 +231,12 @@ public class WorkItemDao{
             queryBuilders.in("wi.rootId", arr);
         }
 
+        if (CollectionUtils.isNotEmpty(workItemQuery.getModuleIds())){
+            List<String> moduleIds = workItemQuery.getModuleIds();
+            String[] array = moduleIds.toArray(new String[moduleIds.size()]);
+            queryBuilders.in("wi.moduleId", array);
+        }
+
         QueryCondition queryCondition = queryBuilders.get();
         return jpaTemplate.findList(queryCondition, WorkItemEntity.class);
     }
@@ -227,7 +246,7 @@ public class WorkItemDao{
         String sql = new String();
         Object o1 = stringObjectMap.get("sql");
         Object query = stringObjectMap.get("query");
-        Integer integer = new Integer(0);
+        Integer integer = Integer.valueOf(0);
         if(!ObjectUtils.isEmpty(query)){
             sql = sql.concat( String.valueOf(o1));
             integer = this.jpaTemplate.getJdbcTemplate().queryForObject(sql, new String[]{}, Integer.class);
@@ -236,6 +255,36 @@ public class WorkItemDao{
         }
 
         return integer;
+    }
+
+    public Integer findWorkChildNum(WorkItemQuery workItemQuery){
+        String sql = "select count(1) from pmc_work_item wi where 1=1 and wi.parent_id = '" + workItemQuery.getParentId() + "'";
+        if (StringUtils.isNotBlank(workItemQuery.getWorkTypeId())){
+            sql = sql.concat(" and wi.work_type_id = '" + workItemQuery.getWorkTypeId() + "'");
+        }
+        if (StringUtils.isNotBlank(workItemQuery.getWorkTypeCode())){
+            sql = sql.concat(" and wi.work_type_code = '" + workItemQuery.getWorkTypeCode() + "'");
+        }
+        return this.jpaTemplate.getJdbcTemplate().queryForObject(sql, Integer.class);
+    }
+
+    public Integer findUserCreateAndTodoWorkNum(WorkItemQuery workItemQuery){
+//        HashMap<String, Integer> WorkItemCount = new HashMap<>();
+//        workItemQuery.setWorkTypeId(null);
+        Map<String, Object> stringObjectMap = WorkItemSearchSql(workItemQuery);
+
+        String sql = new String();
+        Object o1 = stringObjectMap.get("sql");
+        Object query = stringObjectMap.get("query");
+        sql = sql.concat(String.valueOf(o1));
+
+        int index = sql.indexOf("where");
+        String substring = sql.substring(index);
+
+        sql = "Select count(1) as total from pmc_work_item p " + substring;
+        Integer allNum = jpaTemplate.getJdbcTemplate().queryForObject(sql, new Object[]{}, Integer.class);
+        return allNum;
+
     }
 
     /**
@@ -270,6 +319,14 @@ public class WorkItemDao{
                 queryBuilders = queryBuilders.isNull("wi.sprintId");
             }else {
                 queryBuilders = queryBuilders.isNotNull("wi.sprintId");
+            }
+        }
+
+        if(workItemQuery.getProductPlanIdIsNull() != null) {
+            if(workItemQuery.getProductPlanIdIsNull() == true){
+                queryBuilders = queryBuilders.isNull("wi.productPlanId");
+            }else {
+                queryBuilders = queryBuilders.isNotNull("wi.productPlanId");
             }
         }
 
@@ -337,6 +394,19 @@ public class WorkItemDao{
         String sql = "select max(order_num) as maxId from pmc_work_item wi where wi.project_id = ?";
         Integer maxOrderNum = jpaTemplate.getJdbcTemplate().queryForObject(sql, new Object[]{projectId}, Integer.class);
         return maxOrderNum;
+    }
+
+    /**
+     * 查找项目下id 最大orderNum的记录
+     */
+    public WorkItemEntity findMaxOrderNumWorkItem(String projectId){
+        String sql = "select * from pmc_work_item wi where wi.project_id = ? order by order_num desc limit 1";
+//        WorkItemEntity workItemEntity = jpaTemplate.getJdbcTemplate().queryForObject(sql, new Object[]{projectId}, WorkItemEntity.class);
+        try {
+            return jpaTemplate.getJdbcTemplate().queryForObject(sql, new Object[]{projectId}, new BeanPropertyRowMapper<>(WorkItemEntity.class));
+        } catch (EmptyResultDataAccessException e) {
+            return null;
+        }
     }
     /**
      * 史诗下可添加的子事项
@@ -477,6 +547,17 @@ public class WorkItemDao{
 
         }
 
+        if(workItemQuery.getWorkTypeSysId() != null && workItemQuery.getWorkTypeSysId().length()>0){
+
+            if(paramMap.isEmpty()){
+                sql = sql.concat(" p.work_type_sys_id = '" + workItemQuery.getWorkTypeSysId() + "'");
+            }else {
+                sql = sql.concat(" and p.work_type_sys_id = '" + workItemQuery.getWorkTypeSysId() + "'");
+            }
+            paramMap.put("workTypeSysId", workItemQuery.getWorkTypeSysId());
+
+        }
+
         if(workItemQuery.getId() != null && workItemQuery.getId().length()>0){
             if(paramMap.isEmpty()){
                 sql = sql.concat(" p.id = '" + workItemQuery.getId() + "'");
@@ -484,6 +565,24 @@ public class WorkItemDao{
                 sql = sql.concat(" and p.id = '" + workItemQuery.getId() + "'");
             }
             paramMap.put("id", workItemQuery.getId());
+        }
+
+        if(workItemQuery.getParentId() != null && workItemQuery.getParentId().length()>0){
+            if(paramMap.isEmpty()){
+                sql = sql.concat(" p.parent_id = '" + workItemQuery.getParentId() + "'");
+            }else {
+                sql = sql.concat(" and p.parent_id = '" + workItemQuery.getParentId() + "'");
+            }
+            paramMap.put("parentId", workItemQuery.getParentId());
+        }
+
+        if(workItemQuery.getWorkTypeId() != null && workItemQuery.getWorkTypeId().length()>0){
+            if(paramMap.isEmpty()){
+                sql = sql.concat(" p.work_type_sys_id = '" + workItemQuery.getWorkTypeId() + "'");
+            }else {
+                sql = sql.concat(" and p.work_type_sys_id = '" + workItemQuery.getWorkTypeId() + "'");
+            }
+            paramMap.put("workTypeId", workItemQuery.getWorkTypeId());
         }
 
         if(workItemQuery.getWorkTypeIds() != null && workItemQuery.getWorkTypeIds().size() > 0){
@@ -660,6 +759,15 @@ public class WorkItemDao{
             paramMap.put("workStatusIds", workItemQuery.getWorkStatusIds());
         }
 
+        if(workItemQuery.getWorkStatusCode() != null && workItemQuery.getWorkStatusCode().length()>0 ){
+            if(paramMap.isEmpty()){
+                sql = sql.concat(" p.work_status_code = '" + workItemQuery.getWorkStatusCode() + "'");
+            }else {
+                sql = sql.concat(" and p.work_status_code = '" +  workItemQuery.getWorkStatusCode() + "'");
+            }
+            paramMap.put("work_status_code", workItemQuery.getWorkStatusCode());
+        }
+
         if(workItemQuery.getWorkStatusCodes() != null && workItemQuery.getWorkStatusCodes().size()>0){
             List<String> workStatusCodes = workItemQuery.getWorkStatusCodes();
 
@@ -725,6 +833,15 @@ public class WorkItemDao{
             paramMap.put("builderId", workItemQuery.getBuilderIds());
         }
 
+        if(workItemQuery.getAssignerId() != null && workItemQuery.getAssignerId().length()>0){
+            if(paramMap.isEmpty()){
+                sql = sql.concat(" p.assigner_id = '" + workItemQuery.getAssignerId() + "'");
+            }else {
+                sql = sql.concat(" and p.assigner_id = '" + workItemQuery.getAssignerId() + "'");
+            }
+            paramMap.put("assignerId", workItemQuery.getAssignerId());
+        }
+
         if(workItemQuery.getAssignerIds() != null && workItemQuery.getAssignerIds().size()>0){
             List<String> assignerIds = workItemQuery.getAssignerIds();
             String s = new String("(");
@@ -739,7 +856,7 @@ public class WorkItemDao{
             }else {
                 sql = sql.concat(" and p.assigner_id in " + s);
             }
-            paramMap.put("assignerId", workItemQuery.getAssignerIds());
+            paramMap.put("assignerIds", workItemQuery.getAssignerIds());
         }
 
         if(workItemQuery.getIdNotIn() != null && workItemQuery.getIdNotIn().length > 0){
@@ -968,6 +1085,33 @@ public class WorkItemDao{
             }
             paramMap.put("neqStageId", workItemQuery.getNeqStageId());
         }
+
+        if(workItemQuery.getProductPlanId() != null && workItemQuery.getProductPlanId().length()>0){
+            if(paramMap.isEmpty()){
+                sql = sql.concat(" p.product_plan_id = '" + workItemQuery.getProductPlanId() + "'");
+            }else {
+                sql = sql.concat(" and p.product_plan_id = '" + workItemQuery.getProductPlanId() + "'");
+            }
+            paramMap.put("productPlanId", workItemQuery.getProductPlanId());
+        }
+
+        if(workItemQuery.getProductPlanIds() != null && workItemQuery.getProductPlanIds().size()>0){
+            List<String> productPlanIds = workItemQuery.getProductPlanIds();
+            String s = new String("(");
+            for(String productPlanId : productPlanIds){
+                s = s.concat("'" + productPlanId + "',");
+            }
+            s= s.substring(0, s.length() - 1);
+            s= s.concat(")");
+
+            if(paramMap.isEmpty()){
+                sql = sql.concat(" p.product_plan_id in " + s);
+            }else {
+                sql = sql.concat(" and p.product_plan_id in " + s);
+            }
+            paramMap.put("productPlanIds", workItemQuery.getAssignerIds());
+        }
+
         objectObjectHashMap.put("query", paramMap);
         objectObjectHashMap.put("sql", sql);
 
@@ -1001,7 +1145,7 @@ public class WorkItemDao{
             System.out.println(orderType);
             System.out.println(name);
             if(name.equals("code")){
-                sql = sql.concat(" split_part(p.code, '-', 1) " + orderType + ", cast(split_part (p.code, '-', 2) as integer) " + orderType + ",");
+                sql = sql.concat(" p.code " + orderType + ",");
             } else if(name.equals("work_priority_id")){
                 sql = sql.concat(" priority.sort " + orderType + "," );
             } else {
@@ -1022,9 +1166,13 @@ public class WorkItemDao{
 
     public HashMap<String, Integer> findWorkItemNumByWorkType(WorkItemQuery workItemQuery){
         HashMap<String, Integer> WorkItemCount = new HashMap<>();
+        //将 workItemQuery 的 workTypeId 属性设置为 null，表示不按工作类型 ID 进行过滤
         workItemQuery.setWorkTypeId(null);
         Map<String, Object> stringObjectMap = WorkItemSearchSql(workItemQuery);
         String sql = new String();
+        //获取 stringObjectMap 中的两个值
+        //sql：表示基础 SQL 查询片段
+        //query：表示附加的查询条件
         Object o1 = stringObjectMap.get("sql");
         Object query = stringObjectMap.get("query");
         if(!ObjectUtils.isEmpty(query)){
@@ -1034,24 +1182,26 @@ public class WorkItemDao{
             sql = sql.concat( String.valueOf(o1));
             sql = sql.concat(" p.parent_id is null");
         }
+        //找到 SQL 查询片段中 where 关键字的位置
         int index = sql.indexOf("where");
+        //构造完整 SQL 查询语句，统计符合条件的工作项总数
         sql = "Select count(1) as total from pmc_work_item p " + sql.substring(index);
-
+        //统计所有工作项数量
         Integer allNum = jpaTemplate.getJdbcTemplate().queryForObject(sql, new Object[]{}, Integer.class);
         WorkItemCount.put("all", allNum);
-
+        //统计需求类型的工作项数量
         String sql1 =  sql.concat(" and p.work_type_code = 'demand'");
         Integer demandNum = jpaTemplate.getJdbcTemplate().queryForObject(sql1, new Object[]{}, Integer.class);
         WorkItemCount.put("demand", demandNum);
-
+        //统计需求类型的工作项数量
         String sql2 =  sql.concat(" and p.work_type_code = 'task'");
         Integer taskNum = jpaTemplate.getJdbcTemplate().queryForObject(sql2, new Object[]{}, Integer.class);
         WorkItemCount.put("task", taskNum);
-
+        //统计需求类型的工作项数量
         String sql3 =  sql.concat(" and p.work_type_code = 'defect'");
         Integer defectNum = jpaTemplate.getJdbcTemplate().queryForObject(sql3, new Object[]{}, Integer.class);
         WorkItemCount.put("defect", defectNum);
-
+        //统计史诗类型的工作项数量
         String sql4 =  sql.concat(" and p.work_type_code = 'epic'");
         Integer epicNum = jpaTemplate.getJdbcTemplate().queryForObject(sql4, new Object[]{}, Integer.class);
         WorkItemCount.put("epic", epicNum);
@@ -1277,7 +1427,7 @@ public class WorkItemDao{
             System.out.println(orderType);
             System.out.println(name);
             if(name.equals("code")){
-                sql = sql.concat(" split_part(p.code, '-', 1) " + orderType + ", cast(split_part (p.code, '-', 2) as integer) " + orderType + ",");
+                sql = sql.concat(" p.code " + orderType + ",");
             } else if(name.equals("work_priority_id")){
                 sql = sql.concat(" priority.sort " + orderType + "," );
             } else {
@@ -1562,7 +1712,7 @@ public class WorkItemDao{
         // 文档
         sql = "Select count(1) as total from pmc_work_item_document where work_item_id = '" + workItemId + "'";
         Integer workDoucment = jpaTemplate.getJdbcTemplate().queryForObject(sql, new Object[]{}, Integer.class);
-        relationModel.put("workDoucment", workDoucment);
+        relationModel.put("workDocument", workDoucment);
 
         // 测试用例
         sql = "Select count(1) as total from pmc_work_test_case where work_item_id = '" + workItemId + "'";
@@ -1572,20 +1722,6 @@ public class WorkItemDao{
         return relationModel;
     }
 
-    /**
-     * 查找不同字段关联的事项数量
-     * @param colunm
-     * @param ids
-     * @return
-     */
-    public List<Map<String, Object>> findWorkItemNum(String colunm, String ids) {
-
-        String sql = "select id, " + colunm  + " from pmc_work_item where " +  colunm  + " in "+ ids;
-
-//        String sql =  "select " + colunm + ", count(1) as total from pmc_work_item where " + colunm +" in "+ ids + "  group by " + colunm;
-        List<Map<String, Object>> workItemList = this.jpaTemplate.getJdbcTemplate().queryForList(sql);
-        return workItemList;
-    }
 
     public void updateBatchWorkItemSprint(String oldSprintId, String newSprintId){
         JdbcTemplate jdbcTemplate = jpaTemplate.getJdbcTemplate();
@@ -1594,14 +1730,14 @@ public class WorkItemDao{
             try {
                 jdbcTemplate.execute(sql);
             } catch (Exception e){
-                throw new ApplicationException(2000,"批量更新事项迭代失败" + e.getMessage());
+                throw new ApplicationException(ErrorCode.CREATE_ERROR,"批量更新事项迭代失败" + e.getMessage());
             }
         }else {
             String sql = "update pmc_work_item SET sprint_id = null WHERE sprint_id = '" + oldSprintId + "' and work_status_code != 'DONE' ";
             try {
                 jdbcTemplate.execute(sql);
             } catch (Exception e){
-                throw new ApplicationException(2000,"批量更新事项迭代失败" + e.getMessage());
+                throw new ApplicationException(ErrorCode.CREATE_ERROR,"批量更新事项迭代失败" + e.getMessage());
             }
         }
     }
@@ -1613,14 +1749,33 @@ public class WorkItemDao{
             try {
                 jdbcTemplate.execute(sql);
             } catch (Exception e){
-                throw new ApplicationException(2000,"批量更新事项版本失败" + e.getMessage());
+                throw new ApplicationException(ErrorCode.CREATE_ERROR,"批量更新事项版本失败" + e.getMessage());
             }
         }else {
             String sql = "update pmc_work_item SET version_id = null WHERE version_id = '" + oldVersionId + "' and work_status_code != 'DONE'";
             try {
                 jdbcTemplate.execute(sql);
             } catch (Exception e){
-                throw new ApplicationException(2000,"批量更新事项版本失败" + e.getMessage());
+                throw new ApplicationException(ErrorCode.CREATE_ERROR,"批量更新事项版本失败" + e.getMessage());
+            }
+        }
+    }
+
+    public void updateBatchWorkItemProductPlan(String oldProductPlanId, String newProductPlanId){
+        JdbcTemplate jdbcTemplate = jpaTemplate.getJdbcTemplate();
+        if(newProductPlanId != null){
+            String sql = "update pmc_work_item SET product_plan_id = '" + newProductPlanId + "' WHERE product_plan_id = '" + oldProductPlanId + "' and work_status_code != 'DONE' ";
+            try {
+                jdbcTemplate.execute(sql);
+            } catch (Exception e){
+                throw new ApplicationException(ErrorCode.CREATE_ERROR,"批量更新事项版本失败" + e.getMessage());
+            }
+        }else {
+            String sql = "update pmc_work_item SET product_plan_id = null WHERE product_plan_id = '" + oldProductPlanId + "' and work_status_code != 'DONE'";
+            try {
+                jdbcTemplate.execute(sql);
+            } catch (Exception e){
+                throw new ApplicationException(ErrorCode.CREATE_ERROR,"批量更新事项版本失败" + e.getMessage());
             }
         }
     }
@@ -1634,6 +1789,13 @@ public class WorkItemDao{
 
     public List<WorkItemEntity> findVersionWorkItemList(String versionId){
         String sql = "select * from pmc_work_item where version_id = '" +  versionId + "' and work_status_code != 'DONE'";
+        JdbcTemplate jdbcTemplate = jpaTemplate.getJdbcTemplate();
+        List<WorkItemEntity> workItemEntityList = jdbcTemplate.query(sql, new BeanPropertyRowMapper<>(WorkItemEntity.class));
+        return workItemEntityList;
+    }
+
+    public List<WorkItemEntity> findProductPlanWorkItemList(String productPlanId){
+        String sql = "select * from pmc_work_item where product_plan_id = '" +  productPlanId + "' and work_status_code != 'DONE'";
         JdbcTemplate jdbcTemplate = jpaTemplate.getJdbcTemplate();
         List<WorkItemEntity> workItemEntityList = jdbcTemplate.query(sql, new BeanPropertyRowMapper<>(WorkItemEntity.class));
         return workItemEntityList;
@@ -1653,6 +1815,12 @@ public class WorkItemDao{
 
     public List<String> findWorkItemIdsByStage(String stageId){
         String sql = "SELECT work_item_id from pmc_stage_work_item WHERE stage_id = '" + stageId + "'";
+        List<String> workItemIds = jpaTemplate.getJdbcTemplate().queryForList(sql, String.class);
+        return workItemIds;
+    }
+
+    public List<String> findWorkItemIdsByProductPlan(String productPlanId){
+        String sql = "SELECT work_item_id from pmc_work_product_plan WHERE product_plan_id = '" + productPlanId + "'";
         List<String> workItemIds = jpaTemplate.getJdbcTemplate().queryForList(sql, String.class);
         return workItemIds;
     }
@@ -1691,8 +1859,78 @@ public class WorkItemDao{
         return versionWorkItemNum;
     }
 
+    public HashMap<String, Integer> findProductPlanWorkItemNum(String productPlanId){
+        HashMap<String, Integer> versionWorkItemNum = new HashMap<>();
+        String sql = "Select count(1) as total from pmc_work_item wk LEFT JOIN pmc_work_product_plan ws on wk.id = ws.work_item_id  where ws.product_plan_id = '" + productPlanId + "'";
+        Integer allNum = jpaTemplate.getJdbcTemplate().queryForObject(sql, new Object[]{}, Integer.class);
+        versionWorkItemNum.put("all", allNum);
+
+        String sql1 = sql + " and wk.work_status_code != 'DONE'";
+        Integer progressNum = jpaTemplate.getJdbcTemplate().queryForObject(sql1, new Object[]{}, Integer.class);
+        versionWorkItemNum.put("progress", progressNum);
+
+        sql1 = sql + " and wk.work_status_code = 'DONE'";
+        Integer doneNum = jpaTemplate.getJdbcTemplate().queryForObject(sql1, new Object[]{}, Integer.class);
+        versionWorkItemNum.put("done", doneNum);
+
+        return versionWorkItemNum;
+    }
+
+    public Map<String, Integer> findSprintWorkTime(String sprintId){
+        String sql = "Select sum(estimate_time) as estimateTime, sum(surplus_time) as surplusTime from pmc_work_item where sprint_id = ?";
+        Map<String, Object> map = jpaTemplate.getJdbcTemplate().queryForMap(sql, sprintId);
+        Map<String, Integer> map1 = new HashMap<>();
+        if(map.get("estimateTime") != null){
+            map1.put("estimateTime", Integer.valueOf(map.get("estimateTime").toString()));
+        }else {
+            map1.put("estimateTime", 0);
+        }
+        if(map.get("surplusTime") != null){
+            map1.put("surplusTime", Integer.valueOf(map.get("surplusTime").toString()));
+        }else {
+            map1.put("surplusTime", 0);
+        }
+        return map1;
+    }
+
+    public Map<String, Integer> findVersionWorkTime(String versionId){
+        String sql = "Select sum(wk.estimate_time) as estimateTime, sum(wk.surplus_time) as surplusTime from pmc_work_item wk LEFT JOIN pmc_work_version ws on wk.id = ws.work_item_id  where ws.version_id = ?";
+        Map<String, Object> map = jpaTemplate.getJdbcTemplate().queryForMap(sql, versionId);
+        Map<String, Integer> map1 = new HashMap<>();
+        if(map.get("estimateTime") != null){
+            map1.put("estimateTime", Integer.valueOf(map.get("estimateTime").toString()));
+        }
+        else {
+            map1.put("estimateTime", 0);
+        }
+        if(map.get("surplusTime") != null){
+            map1.put("surplusTime", Integer.valueOf(map.get("surplusTime").toString()));
+        }else {
+            map1.put("surplusTime", 0);
+        }
+        return map1;
+    }
+
+    public Map<String, Integer> findProductPlanWorkTime(String productPlanId){
+        String sql = "Select sum(wk.estimate_time) as estimateTime, sum(wk.surplus_time) as surplusTime from pmc_work_item wk LEFT JOIN pmc_work_product_plan ws on wk.id = ws.work_item_id  where ws.product_plan_id = ?";
+        Map<String, Object> map = jpaTemplate.getJdbcTemplate().queryForMap(sql, productPlanId);
+        Map<String, Integer> map1 = new HashMap<>();
+        if(map.get("estimateTime") != null){
+            map1.put("estimateTime", Integer.valueOf(map.get("estimateTime").toString()));
+        }
+        else {
+            map1.put("estimateTime", 0);
+        }
+        if(map.get("surplusTime") != null){
+            map1.put("surplusTime", Integer.valueOf(map.get("surplusTime").toString()));
+        }else {
+            map1.put("surplusTime", 0);
+        }
+        return map1;
+    }
+
     public Integer findChildrenLevel(String id){
-        Integer level = new Integer(0);
+        Integer level = Integer.valueOf(0);
         String sql = "Select id from pmc_work_item where parent_id = '" + id + "'";
         List<String> workItemIdList = jpaTemplate.getJdbcTemplate().queryForList(sql, String.class);
         if(workItemIdList.size() > 0){

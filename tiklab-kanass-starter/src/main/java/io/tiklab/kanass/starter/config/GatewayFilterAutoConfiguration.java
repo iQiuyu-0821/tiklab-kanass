@@ -1,13 +1,11 @@
 package io.tiklab.kanass.starter.config;
 
 import io.tiklab.eam.author.Authenticator;
-import io.tiklab.eam.client.author.config.AuthorConfig;
-import io.tiklab.eam.client.author.config.AuthorConfigBuilder;
-import io.tiklab.eam.client.author.handler.AuthorHandler;
-import io.tiklab.gateway.router.Router;
-import io.tiklab.gateway.router.RouterBuilder;
-import io.tiklab.gateway.router.config.RouterConfig;
-import io.tiklab.gateway.router.config.RouterConfigBuilder;
+
+import io.tiklab.eam.client.author.handler.DefaultAuthorHandler;
+import io.tiklab.gateway.config.*;
+import io.tiklab.gateway.handler.author.AuthorHandler;
+
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -16,37 +14,17 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class GatewayFilterAutoConfiguration{
 
-    @Value("${soular.address:null}")
-    String EasAuthAddress;
-
-    @Value("${soular.embbed.enable:false}")
-    Boolean enableEam;
     @Bean
-    Router router(RouterConfig routerConfig){
-        return RouterBuilder.newRouter(routerConfig);
-    }
+    GatewayConfig gatewayConfig(IgnoreConfig ignoreConfig){
+        GatewayConfig gatewayConfig = new GatewayConfig();
+        gatewayConfig.setIgnoreConfig(ignoreConfig);
 
-    //路由配置
-    @Bean
-    RouterConfig routerConfig(){
-        String[] s = {};
-
-        return RouterConfigBuilder.instance()
-                .preRoute(s, EasAuthAddress)
-                .get();
-    }
-
-    //认证filter
-    @Bean
-    AuthorHandler authorFilter(Authenticator authenticator, AuthorConfig ignoreConfig){
-        return new AuthorHandler()
-                .setAuthenticator(authenticator)
-                .setAuthorConfig(ignoreConfig);
+        return gatewayConfig;
     }
 
     @Bean
-    public AuthorConfig authorConfig(){
-        return AuthorConfigBuilder.instance()
+    public IgnoreConfig authorConfig(){
+        return IgnoreConfigBuilder.instance()
                 .ignoreTypes(new String[]{
                         ".ico",
                         ".jpg",
@@ -102,7 +80,10 @@ public class GatewayFilterAutoConfiguration{
                         "/workItem/findWorkItem",
                         "/message/messageItem/syncUpdateMessage",
                         "/message/messageItem/syncDeleteMessage",
-
+                        "/init/install/findStatus",
+                        "/openapi/doc",
+                        "/user/ldap/common/cfg/findLdapCfg",
+                        "/eam/ldap/passport/login"
 
                 })
                 .ignorePreUrls(new String[]{

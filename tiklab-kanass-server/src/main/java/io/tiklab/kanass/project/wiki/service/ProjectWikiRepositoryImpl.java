@@ -1,5 +1,6 @@
 package io.tiklab.kanass.project.wiki.service;
 
+import io.tiklab.eam.common.context.LoginContext;
 import io.tiklab.kanass.project.wiki.dao.ProjectWikiRepositoryDao;
 import io.tiklab.kanass.project.wiki.entity.ProjectWikiRepositoryEntity;
 import io.tiklab.kanass.project.wiki.model.KanassRepository;
@@ -8,9 +9,11 @@ import io.tiklab.kanass.project.wiki.model.ProjectWikiRepositoryQuery;
 import io.tiklab.core.page.Pagination;
 import io.tiklab.core.page.PaginationBuilder;
 
+import io.tiklab.kanass.project.wiki.model.WikiRepository;
 import io.tiklab.toolkit.beans.BeanMapper;
 import io.tiklab.toolkit.join.JoinTemplate;
 import io.tiklab.kanass.workitem.service.WorkRepositoryService;
+import io.tiklab.user.user.model.User;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -22,7 +25,7 @@ import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
- * 收藏迭代的服务
+ * 项目管理的知识库
  */
 @Service
 public class ProjectWikiRepositoryImpl implements ProjectWikiRepositoryService {
@@ -42,6 +45,31 @@ public class ProjectWikiRepositoryImpl implements ProjectWikiRepositoryService {
         ProjectWikiRepositoryEntity projectWikiRepositoryEntity = BeanMapper.map(projectWikiRepository, ProjectWikiRepositoryEntity.class);
 
         return projectWikiRepositoryDao.createProjectWikiRepository(projectWikiRepositoryEntity);
+    }
+
+    /**
+     * 创建知识库，然后关联
+     * @param projectWikiRepository
+     * @return
+     */
+    @Override
+    public String createWikiRepository(@NotNull @Valid ProjectWikiRepository projectWikiRepository) {
+        // 知识库信息
+        WikiRepository wikiRepository = new WikiRepository();
+        wikiRepository.setName(projectWikiRepository.getWikiRepository().getName());
+        wikiRepository.setDesc(projectWikiRepository.getWikiRepository().getDesc());
+        wikiRepository.setLimits(projectWikiRepository.getWikiRepository().getLimits());
+        wikiRepository.setIconUrl(projectWikiRepository.getWikiRepository().getIconUrl());
+        wikiRepository.setMaster(new User(LoginContext.getLoginId()));
+
+        // 创建后的知识库id
+        String repository = workRepositoryService.createRepository(wikiRepository);
+        projectWikiRepository.getWikiRepository().setId(repository);
+
+        ProjectWikiRepositoryEntity projectWikiRepositoryEntity = BeanMapper.map(projectWikiRepository, ProjectWikiRepositoryEntity.class);
+
+        return projectWikiRepositoryDao.createProjectWikiRepository(projectWikiRepositoryEntity);
+//        return repository;
     }
 
     @Override
@@ -103,7 +131,7 @@ public class ProjectWikiRepositoryImpl implements ProjectWikiRepositoryService {
     public ProjectWikiRepository findProjectWikiRepository(@NotNull String id) {
         ProjectWikiRepository projectWikiRepository = findOne(id);
 
-        joinTemplate.joinQuery(projectWikiRepository);
+        joinTemplate.joinQuery(projectWikiRepository, new String[]{"wikiRepository", "project"});
 
         return projectWikiRepository;
     }
@@ -114,7 +142,7 @@ public class ProjectWikiRepositoryImpl implements ProjectWikiRepositoryService {
 
         List<ProjectWikiRepository> projectWikiRepositoryList =  BeanMapper.mapList(projectWikiRepositoryEntityList,ProjectWikiRepository.class);
 
-        joinTemplate.joinQuery(projectWikiRepositoryList);
+        joinTemplate.joinQuery(projectWikiRepositoryList, new String[]{"wikiRepository", "project"});
 
         return projectWikiRepositoryList;
     }
@@ -144,7 +172,7 @@ public class ProjectWikiRepositoryImpl implements ProjectWikiRepositoryService {
 
         List<ProjectWikiRepository> projectWikiRepositoryList = BeanMapper.mapList(pagination.getDataList(),ProjectWikiRepository.class);
 
-        joinTemplate.joinQuery(projectWikiRepositoryList);
+        joinTemplate.joinQuery(projectWikiRepositoryList, new String[]{"wikiRepository", "project"});
 
         return PaginationBuilder.build(pagination,projectWikiRepositoryList);
     }

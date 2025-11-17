@@ -1,13 +1,14 @@
 package io.tiklab.kanass.workitem.model;
 
 
+import io.tiklab.form.form.model.Form;
 import io.tiklab.toolkit.beans.annotation.Mapper;
 import io.tiklab.toolkit.beans.annotation.Mapping;
 import io.tiklab.toolkit.beans.annotation.Mappings;
 import io.tiklab.core.BaseModel;
 import io.tiklab.flow.flow.model.Flow;
 import io.tiklab.toolkit.join.annotation.Join;
-import io.tiklab.toolkit.join.annotation.JoinQuery;
+import io.tiklab.toolkit.join.annotation.JoinField;
 import io.tiklab.postin.annotation.ApiModel;
 import io.tiklab.postin.annotation.ApiProperty;
 
@@ -29,7 +30,7 @@ public class WorkTypeDm extends BaseModel {
     @Mappings({
             @Mapping(source = "workType.id",target = "workTypeId")
     })
-    @JoinQuery(key = "id")
+    @JoinField(key = "id")
     private WorkType workType;
 
 
@@ -37,9 +38,15 @@ public class WorkTypeDm extends BaseModel {
     @Mappings({
             @Mapping(source = "flow.id",target = "flowId")
     })
-    @JoinQuery(key = "id")
+    @JoinField(key = "id")
     private Flow flow;
 
+    @ApiProperty(name="form",desc="关联流程")
+    @Mappings({
+            @Mapping(source = "form.id",target = "formId")
+    })
+    @JoinField(key = "id")
+    private Form form;
 
     public java.lang.String getId() {
         return id;
@@ -75,4 +82,11 @@ public class WorkTypeDm extends BaseModel {
     }
 
 
+    public Form getForm() {
+        return form;
+    }
+
+    public void setForm(Form form) {
+        this.form = form;
+    }
 }

@@ -1,15 +1,13 @@
 package io.tiklab.kanass.workitem.service;
 
-import io.tiklab.kanass.workitem.model.WorkBoard;
-import io.tiklab.kanass.workitem.model.WorkItem;
-import io.tiklab.kanass.workitem.model.WorkItemQuery;
-import io.tiklab.kanass.workitem.model.WorkUserGroupBoard;
+import io.tiklab.kanass.workitem.model.*;
 import io.tiklab.core.page.Pagination;
 
 import io.tiklab.toolkit.join.annotation.FindList;
 import io.tiklab.toolkit.join.annotation.JoinProvider;
 import io.tiklab.toolkit.join.annotation.FindAll;
 import io.tiklab.toolkit.join.annotation.FindOne;
+import org.springframework.web.bind.annotation.RequestBody;
 
 import javax.validation.Valid;
 import javax.validation.constraints.NotNull;
@@ -30,7 +28,7 @@ public interface WorkItemService {
     */
     String createWorkItem(@NotNull @Valid WorkItem workItem);
 
-    String createJiraWorkItem(@NotNull @Valid WorkItem workItem);
+    String createImportWorkItem(@NotNull @Valid WorkItem workItem);
 
     /**
     * 更新事项
@@ -81,7 +79,11 @@ public interface WorkItemService {
     * @return
     */
     List<WorkItem> findWorkItemList(WorkItemQuery workItemQuery);
+
+    List<WorkItem> findWorkItemListNoJoinQuery(WorkItemQuery workItemQuery);
     Integer findWorkItemListCount(WorkItemQuery workItemQuery);
+    Integer findWorkChildNum(WorkItemQuery workItemQuery);
+    Map<String, Integer> findUserCreateAndTodoWorkNum(WorkItemQuery workItemQuery);
     /**
      * 查询可被史诗关联事项列表
      * @param workItemQuery
@@ -103,6 +105,13 @@ public interface WorkItemService {
     */
     Pagination<WorkItem> findWorkItemPage(WorkItemQuery workItemQuery);
 
+
+    /**
+     * 按条件分页查询列表,包含child子事项信息
+     * @param workItemQuery
+     * @return
+     */
+    Pagination<WorkItem> findConditionWorkItemPageWithChild(WorkItemQuery workItemQuery);
 
     /**
      * 按条件分页查询列表
@@ -199,7 +208,7 @@ public interface WorkItemService {
 
     HashMap<String, Integer>findWorkItemRelationModelCount(String workItemId, String workTypeCode);
 
-    List<Map<String, Object>> findWorkItemNum(String colunm, String ids);
+
 
     /**
      * 批量更新事项的迭代
@@ -215,10 +224,19 @@ public interface WorkItemService {
      */
     void updateBatchWorkItemVersion(@NotNull String oldVersionId, String newVersionId);
 
+    /**
+     * 批量更新事项的产品计划
+     * @param oldProductPlanId
+     * @param newProductPlanId
+     */
+    void updateBatchWorkItemProductPlan(@NotNull String oldProductPlanId, String newProductPlanId);
+
 
     List<WorkItem> findSprintWorkItemList(@NotNull String sprintId);
 
     List<WorkItem> findVersionWorkItemList(@NotNull String versionId);
+
+    List<WorkItem> findProductPlanWorkItemList(@NotNull String productPlanId);
 
     /**
      * 查找迭代下各个状态的事项
@@ -228,6 +246,24 @@ public interface WorkItemService {
     HashMap<String, Integer> findSprintWorkItemNum(@NotNull String sprintId);
 
     HashMap<String, Integer> findVersionWorkItemNum(@NotNull String versionId);
+
+    HashMap<String, Integer> findProductPlanWorkItemNum(@NotNull String productPlanId);
+
+    /**
+     * 查找迭代下的预计工时和剩余工时
+     * @param springId
+     * @return
+     */
+    Map<String, Integer> findSprintWorkTime(@NotNull String springId);
+
+    /**
+     * 查找版本下的预计工时和剩余工时
+     * @param versionId
+     * @return
+     */
+    Map<String, Integer> findVersionWorkTime(@NotNull String versionId);
+
+    Map<String, Integer> findProductPlanWorkTime(@NotNull String productPlanId);
 
     /**
      * 查看事项有几级下级事项
@@ -242,4 +278,19 @@ public interface WorkItemService {
     boolean haveChildren(@NotNull String id);
 
     List<String> findWorkItemAndChildrenIds(String workItemId);
+
+    /**
+     * 查询首页、项目等概览页面待办事项数量
+     * @param workItemQuery
+     * @return
+     */
+    Map<String, Integer> findTodoPageWorkItemNum(WorkItemQuery workItemQuery);
+
+    /**
+     * 查询未关联产品计划的事项
+     * @param workItemQuery
+     * @return
+     */
+    Pagination<WorkItem> findUnLinkProductPlanWorkPage(WorkItemQuery workItemQuery);
+
 }

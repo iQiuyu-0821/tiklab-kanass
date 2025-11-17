@@ -1,5 +1,8 @@
 package io.tiklab.kanass.workitem.service;
 
+import io.tiklab.kanass.test.testcase.test.model.TestCase;
+import io.tiklab.kanass.test.testcase.test.model.TestCaseQuery;
+import io.tiklab.kanass.test.testcase.test.service.TestCaseService;
 import io.tiklab.toolkit.beans.BeanMapper;
 import io.tiklab.core.page.Pagination;
 import io.tiklab.core.page.PaginationBuilder;
@@ -9,7 +12,6 @@ import io.tiklab.toolkit.join.JoinTemplate;
 import io.tiklab.rpc.annotation.Exporter;
 import io.tiklab.rpc.client.router.lookup.FixedLookup;
 import io.tiklab.kanass.project.test.model.ProjectTestCase;
-import io.tiklab.kanass.project.test.model.TestCase;
 import io.tiklab.kanass.support.model.SystemUrl;
 import io.tiklab.kanass.support.model.SystemUrlQuery;
 import io.tiklab.kanass.support.service.SystemUrlService;
@@ -19,15 +21,10 @@ import io.tiklab.kanass.workitem.dao.WorkTestCaseDao;
 import io.tiklab.kanass.workitem.entity.WorkTestCaseEntity;
 import io.tiklab.kanass.workitem.model.WorkTestCase;
 import io.tiklab.kanass.workitem.model.WorkTestCaseQuery;
-import io.tiklab.kanass.project.test.model.TestCaseQuery;
 import io.tiklab.user.user.model.User;
-import io.tiklab.user.user.service.UserService;
+import io.tiklab.user.user.service.UserProcessor;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
-import org.springframework.util.LinkedMultiValueMap;
-import org.springframework.util.MultiValueMap;
 import org.springframework.util.ObjectUtils;
 
 import javax.validation.Valid;
@@ -55,27 +52,30 @@ public class WorkTestCaseServiceImpl implements WorkTestCaseService {
     @Autowired
     SystemUrlService systemUrlService;
 
+    @Autowired
+    TestCaseService testCaseService;
+
     String getSystemUrl(){
         SystemUrlQuery systemUrlQuery = new SystemUrlQuery();
-        systemUrlQuery.setName("teston");
+        systemUrlQuery.setName("kanass");
         List<SystemUrl> systemUrlList = systemUrlService.findSystemUrlList(systemUrlQuery);
         String url = systemUrlList.get(0).getSystemUrl();
         return url;
     }
 
-    UserService userServiceRpc(){
+    UserProcessor userServiceRpc(){
         SystemUrlQuery systemUrlQuery = new SystemUrlQuery();
-        systemUrlQuery.setName("teston");
+        systemUrlQuery.setName("kanass");
         List<SystemUrl> systemUrlList = systemUrlService.findSystemUrlList(systemUrlQuery);
         String url = systemUrlList.get(0).getSystemUrl();
-        return new RpcClientTeamWireUtil().rpcClient().getBean(UserService.class, new FixedLookup(url));
+        return new RpcClientTeamWireUtil().rpcClient().getBean(UserProcessor.class, new FixedLookup(url));
     }
 
     @Override
     public String createWorkTestCase(@NotNull List<WorkTestCase> workTestCase) {
         String document=null;
 
-        //批量创建文档
+        //批量创建
         for (WorkTestCase itemTestCase: workTestCase){
             WorkTestCaseEntity workTestCaseEntity = BeanMapper.map(itemTestCase, WorkTestCaseEntity.class);
              document = workTestCaseDao.createWorkTestCase(workTestCaseEntity);
@@ -127,7 +127,7 @@ public class WorkTestCaseServiceImpl implements WorkTestCaseService {
     public WorkTestCase findWorkTestCase(@NotNull String id) {
         WorkTestCase workTestCase = findOne(id);
 
-        joinTemplate.joinQuery(workTestCase);
+        joinTemplate.joinQuery(workTestCase, new String[]{"workItem"});
         return workTestCase;
     }
 
@@ -137,7 +137,7 @@ public class WorkTestCaseServiceImpl implements WorkTestCaseService {
 
         List<WorkTestCase> workTestCaseList =  BeanMapper.mapList(workTestCaseEntityList,WorkTestCase.class);
 
-        joinTemplate.joinQuery(workTestCaseList);
+        joinTemplate.joinQuery(workTestCaseList, new String[]{"workItem"});
         return workTestCaseList;
     }
 
@@ -147,7 +147,7 @@ public class WorkTestCaseServiceImpl implements WorkTestCaseService {
 
         List<WorkTestCase> workTestCaseList = BeanMapper.mapList(workTestCaseEntityList,WorkTestCase.class);
 
-        joinTemplate.joinQuery(workTestCaseList);
+        joinTemplate.joinQuery(workTestCaseList, new String[]{"workItem"});
 
         return workTestCaseList;
     }
@@ -162,24 +162,27 @@ public class WorkTestCaseServiceImpl implements WorkTestCaseService {
         List<ProjectTestCase> list = new ArrayList<>();
         if (!ObjectUtils.isEmpty(workTestCaseList)){
             for (WorkTestCase workTestCase:workTestCaseList){
-                HttpHeaders httpHeaders = httpRequestUtil.initHeaders(MediaType.APPLICATION_JSON, null);
-                String systemUrl = getSystemUrl();
-                MultiValueMap param = new LinkedMultiValueMap<>();
-                param.add("id", workTestCase.getTestCaseId());
-                TestCase testCase = httpRequestUtil.requestPost(httpHeaders, systemUrl + "/api/testCase/findTestCase", param, TestCase.class);
+//                HttpHeaders httpHeaders = httpRequestUtil.initHeaders(MediaType.APPLICATION_JSON, null);
+//                String systemUrl = getSystemUrl();
+//                MultiValueMap param = new LinkedMultiValueMap<>();
+//                param.add("id", workTestCase.getTestCaseId());
+//                TestCase testCase = httpRequestUtil.requestPost(httpHeaders, systemUrl + "/api/testCase/findTestCase", param, TestCase.class);
+
+                TestCase testCase = testCaseService.findTestCase(workTestCase.getTestCaseId());
 
 
                 ProjectTestCase projectTestCase = new ProjectTestCase();
 
                 if (!ObjectUtils.isEmpty(testCase)){
+                    projectTestCase.setTestCaseKey(testCase.getCaseKey());
                     projectTestCase.setTestCaseName(testCase.getName());
                     projectTestCase.setId(testCase.getId());
-                    projectTestCase.setCreateUser(testCase.getCreateUser().getNickname());
-                    if(!ObjectUtils.isEmpty(testCase.getCategory())){
-                        projectTestCase.setTestCategoryName(testCase.getCategory().getName());
-                    }
+                    projectTestCase.setCreateUser(testCase.getDirector() != null ? testCase.getDirector().getNickname() : null);
+//                    if(!ObjectUtils.isEmpty(testCase.getCategory())){
+//                        projectTestCase.setTestCategoryName(testCase.getCategory().getName());
+//                    }
                     projectTestCase.setCaseType(testCase.getCaseType());
-                    projectTestCase.setRepository(testCase.getRepository());
+                    projectTestCase.setModuleName(testCase.getModule().getModuleName());
                     list.add(projectTestCase);
                 }else {
                     projectTestCase.setTestCaseName("用例已被删除");
@@ -198,28 +201,30 @@ public class WorkTestCaseServiceImpl implements WorkTestCaseService {
 
         List<WorkTestCase> workTestCaseList = BeanMapper.mapList(pagination.getDataList(),WorkTestCase.class);
 
-        joinTemplate.joinQuery(workTestCaseList);
+        joinTemplate.joinQuery(workTestCaseList, new String[]{"workItem"});
 
         if (!ObjectUtils.isEmpty(workTestCaseList)){
             for (WorkTestCase workTestCase:workTestCaseList){
-                HttpHeaders httpHeaders = httpRequestUtil.initHeaders(MediaType.APPLICATION_JSON, null);
-                String systemUrl = getSystemUrl();
-                MultiValueMap param = new LinkedMultiValueMap<>();
-                param.add("id", workTestCase.getTestCaseId());
-                TestCase testCase = httpRequestUtil.requestPost(httpHeaders, systemUrl + "/api/testCase/findTestCase", param, TestCase.class);
+//                HttpHeaders httpHeaders = httpRequestUtil.initHeaders(MediaType.APPLICATION_JSON, null);
+//                String systemUrl = getSystemUrl();
+//                MultiValueMap param = new LinkedMultiValueMap<>();
+//                param.add("id", workTestCase.getTestCaseId());
+//                TestCase testCase = httpRequestUtil.requestPost(httpHeaders, systemUrl + "/api/testCase/findTestCase", param, TestCase.class);
 
+                TestCase testCase = testCaseService.findTestCase(workTestCase.getTestCaseId());
 
                 ProjectTestCase projectTestCase = new ProjectTestCase();
 
                 if (!ObjectUtils.isEmpty(testCase)){
+                    projectTestCase.setTestCaseKey(testCase.getCaseKey());
                     projectTestCase.setTestCaseName(testCase.getName());
                     projectTestCase.setId(testCase.getId());
-                    projectTestCase.setCreateUser(testCase.getCreateUser().getNickname());
-                    if(!ObjectUtils.isEmpty(testCase.getCategory())){
-                        projectTestCase.setTestCategoryName(testCase.getCategory().getName());
-                    }
+                    projectTestCase.setCreateUser(testCase.getDirector() != null ? testCase.getDirector().getNickname() : null);
+//                    if(!ObjectUtils.isEmpty(testCase.getCategory())){
+//                        projectTestCase.setTestCategoryName(testCase.getCategory().getName());
+//                    }
                     projectTestCase.setCaseType(testCase.getCaseType());
-                    projectTestCase.setRepository(testCase.getRepository());
+                    projectTestCase.setModuleName(testCase.getModule().getModuleName());
                     workTestCase.setProjectTestCase(projectTestCase);
                 }else {
                     projectTestCase.setTestCaseName("用例已被删除");
@@ -236,8 +241,8 @@ public class WorkTestCaseServiceImpl implements WorkTestCaseService {
     public Pagination<ProjectTestCase> findUnRelationWorkTestCaseList(WorkTestCaseQuery workTestCaseQuery) {
         TestCaseQuery testCaseQuery = new TestCaseQuery();
 
-        String[] repositoryIds = workTestCaseQuery.getRepositoryIds();
-        testCaseQuery.setInList(repositoryIds);
+//        String[] repositoryIds = workTestCaseQuery.getRepositoryIds();
+//        testCaseQuery.setInList(repositoryIds);
 
         List<WorkTestCase> workTestCaseList = findWorkTestCaseList(workTestCaseQuery);
         List<String> workTestCaseIds = workTestCaseList.stream().map(workTestCase -> workTestCase.getTestCaseId()).collect(Collectors.toList());
@@ -245,13 +250,18 @@ public class WorkTestCaseServiceImpl implements WorkTestCaseService {
         String[] stringIds = new String[size];
         String[] documentIds = workTestCaseIds.toArray(stringIds);
         testCaseQuery.setNotInList(documentIds);
-        testCaseQuery.setInList(repositoryIds);
+        testCaseQuery.setProjectId(workTestCaseQuery.getProjectId());
+//        testCaseQuery.setInList(repositoryIds);
         testCaseQuery.setName(workTestCaseQuery.getName());
         testCaseQuery.setCreateUser(workTestCaseQuery.getCreatUserId());
+//        testCaseQuery.getPageParam().setCurrentPage(workTestCaseQuery.getPageParam().getCurrentPage());
+        testCaseQuery.setPageParam(workTestCaseQuery.getPageParam());
 
-        HttpHeaders httpHeaders = httpRequestUtil.initHeaders(MediaType.APPLICATION_JSON, null);
-        String systemUrl = getSystemUrl();
-        Pagination<TestCase> testCaseListPage = httpRequestUtil.requestPostPage(httpHeaders, systemUrl + "/api/testCase/findTestCasePage", testCaseQuery, TestCase.class);
+//        HttpHeaders httpHeaders = httpRequestUtil.initHeaders(MediaType.APPLICATION_JSON, null);
+//        String systemUrl = getSystemUrl();
+//        Pagination<TestCase> testCaseListPage = httpRequestUtil.requestPostPage(httpHeaders, systemUrl + "/api/testCase/findTestCasePage", testCaseQuery, TestCase.class);
+
+        Pagination<TestCase> testCaseListPage = testCaseService.findTestCasePage(testCaseQuery);
 
         Pagination<ProjectTestCase> projectTestCasePagination = new Pagination<ProjectTestCase>();
         projectTestCasePagination.setTotalRecord(testCaseListPage.getTotalRecord());
@@ -262,14 +272,16 @@ public class WorkTestCaseServiceImpl implements WorkTestCaseService {
         List<ProjectTestCase> projectTestCaseList = new ArrayList<ProjectTestCase>();
         for (TestCase testCase : testCaseListPage.getDataList()) {
             ProjectTestCase projectTestCase = new ProjectTestCase();
+            projectTestCase.setTestCaseKey(testCase.getCaseKey());
             projectTestCase.setTestCaseName(testCase.getName());
             projectTestCase.setId(testCase.getId());
-            projectTestCase.setCreateUser(testCase.getCreateUser().getName());
-            projectTestCase.setRepository(testCase.getRepository());
-            if(!ObjectUtils.isEmpty(testCase.getCategory())){
-                projectTestCase.setTestCategoryName(testCase.getCategory().getName());
-            }
+            projectTestCase.setCreateUser(testCase.getDirector() != null ? testCase.getDirector().getNickname() : null);
+//            projectTestCase.setRepository(testCase.getRepository());
+//            if(!ObjectUtils.isEmpty(testCase.getCategory())){
+//                projectTestCase.setTestCategoryName(testCase.getCategory().getName());
+//            }
             projectTestCase.setCaseType(testCase.getCaseType());
+            projectTestCase.setModuleName(testCase.getModule().getModuleName());
             projectTestCaseList.add(projectTestCase);
         }
         projectTestCasePagination.setDataList(projectTestCaseList);

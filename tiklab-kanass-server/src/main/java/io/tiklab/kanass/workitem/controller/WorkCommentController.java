@@ -2,6 +2,7 @@ package io.tiklab.kanass.workitem.controller;
 
 import io.tiklab.kanass.workitem.model.WorkComment;
 import io.tiklab.kanass.workitem.model.WorkCommentQuery;
+import io.tiklab.kanass.workitem.model.WorkRelateQuery;
 import io.tiklab.kanass.workitem.service.WorkCommentService;
 import io.tiklab.postin.annotation.Api;
 import io.tiklab.core.page.Pagination;
@@ -19,13 +20,14 @@ import org.springframework.web.bind.annotation.RestController;
 import javax.validation.Valid;
 import javax.validation.constraints.NotNull;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 事项评论控制器
  */
 @RestController
 @RequestMapping("/workComment")
-@Api(name = "WorkCommentController",desc = "WorkCommentController")
+//@Api(name = "WorkCommentController",desc = "WorkCommentController")
 public class WorkCommentController {
 
     private static Logger logger = LoggerFactory.getLogger(WorkCommentController.class);
@@ -34,8 +36,8 @@ public class WorkCommentController {
     private WorkCommentService workCommentService;
 
     @RequestMapping(path="/createWorkComment",method = RequestMethod.POST)
-    @ApiMethod(name = "createWorkComment",desc = "创建事项评论")
-    @ApiParam(name = "workComment",desc = "事项评论模型",required = true)
+    //@ApiMethod(name = "createWorkComment",desc = "创建事项评论")
+    //@ApiParam(name = "workComment",desc = "事项评论模型",required = true)
     public Result<String> createWorkComment(@RequestBody @NotNull @Valid WorkComment workComment){
         String id = workCommentService.createWorkComment(workComment);
 
@@ -43,8 +45,8 @@ public class WorkCommentController {
     }
 
     @RequestMapping(path="/updateWorkComment",method = RequestMethod.POST)
-    @ApiMethod(name = "updateWorkComment",desc = "更新事项评论")
-    @ApiParam(name = "workComment",desc = "事项评论模型",required = true)
+    //@ApiMethod(name = "updateWorkComment",desc = "更新事项评论")
+    //@ApiParam(name = "workComment",desc = "事项评论模型",required = true)
     public Result<Void> updateWorkComment(@RequestBody @NotNull @Valid WorkComment workComment){
         workCommentService.updateWorkComment(workComment);
 
@@ -52,8 +54,8 @@ public class WorkCommentController {
     }
 
     @RequestMapping(path="/deleteWorkComment",method = RequestMethod.POST)
-    @ApiMethod(name = "deleteWorkComment",desc = "删除事项评论")
-    @ApiParam(name = "id",desc = "评论id",required = true)
+    //@ApiMethod(name = "deleteWorkComment",desc = "删除事项评论")
+    //@ApiParam(name = "id",desc = "评论id",required = true)
     public Result<Void> deleteWorkComment(@NotNull String id){
         workCommentService.deleteWorkComment(id);
 
@@ -61,8 +63,8 @@ public class WorkCommentController {
     }
 
     @RequestMapping(path="/findWorkComment",method = RequestMethod.POST)
-    @ApiMethod(name = "findWorkComment",desc = "根据id查找事项评论")
-    @ApiParam(name = "id",desc = "评论id",required = true)
+    //@ApiMethod(name = "findWorkComment",desc = "根据id查找事项评论")
+    //@ApiParam(name = "id",desc = "评论id",required = true)
     public Result<WorkComment> findWorkComment(@NotNull String id){
         WorkComment workComment = workCommentService.findWorkComment(id);
 
@@ -70,7 +72,7 @@ public class WorkCommentController {
     }
 
     @RequestMapping(path="/findAllWorkComment",method = RequestMethod.POST)
-    @ApiMethod(name = "findAllWorkComment",desc = "查找所有事项评论")
+    //@ApiMethod(name = "findAllWorkComment",desc = "查找所有事项评论")
     public Result<List<WorkComment>> findAllWorkComment(){
         List<WorkComment> workCommentList = workCommentService.findAllWorkComment();
 
@@ -78,8 +80,8 @@ public class WorkCommentController {
     }
 
     @RequestMapping(path = "/findWorkCommentList",method = RequestMethod.POST)
-    @ApiMethod(name = "findWorkCommentList",desc = "根据条件查询事项评论列表")
-    @ApiParam(name = "workCommentQuery",desc = "事项评论搜索条件模型",required = true)
+    //@ApiMethod(name = "findWorkCommentList",desc = "根据条件查询事项评论列表")
+    //@ApiParam(name = "workCommentQuery",desc = "事项评论搜索条件模型",required = true)
     public Result<List<WorkComment>> findWorkCommentList(@RequestBody @Valid @NotNull WorkCommentQuery workCommentQuery){
         List<WorkComment> workCommentList = workCommentService.findWorkCommentList(workCommentQuery);
 
@@ -87,12 +89,23 @@ public class WorkCommentController {
     }
 
     @RequestMapping(path = "/findWorkCommentPage",method = RequestMethod.POST)
-    @ApiMethod(name = "findWorkCommentPage",desc = "根据条件按分页查询事项评论列表")
-    @ApiParam(name = "workCommentQuery",desc = "事项评论搜索条件模型",required = true)
+    //@ApiMethod(name = "findWorkCommentPage",desc = "根据条件按分页查询事项评论列表")
+    //@ApiParam(name = "workCommentQuery",desc = "事项评论搜索条件模型",required = true)
     public Result<Pagination<WorkComment>> findWorkCommentPage(@RequestBody @Valid @NotNull WorkCommentQuery workCommentQuery){
         Pagination<WorkComment> pagination = workCommentService.findWorkCommentPage(workCommentQuery);
 
         return Result.ok(pagination);
     }
 
+    /**
+     * 查询动态、评论、工时记录数量
+     * @param workCommentQuery
+     * @return
+     */
+    @RequestMapping(path = "/findWorkDynamicAndCommentAndLogNum",method = RequestMethod.POST)
+    public Result<Map<String, Integer>> findWorkDynamicAndCommentAndLogNum(@RequestBody @Valid @NotNull WorkCommentQuery workCommentQuery){
+        Map<String, Integer> numMap = workCommentService.findWorkDynamicAndCommentAndLogNum(workCommentQuery);
+
+        return Result.ok(numMap);
+    }
 }

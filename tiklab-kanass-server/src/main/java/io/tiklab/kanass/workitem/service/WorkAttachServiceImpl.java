@@ -4,6 +4,7 @@ import io.tiklab.dal.jpa.criterial.condition.DeleteCondition;
 import io.tiklab.dal.jpa.criterial.conditionbuilder.DeleteBuilders;
 import io.tiklab.kanass.workitem.model.WorkAttach;
 import io.tiklab.kanass.workitem.model.WorkAttachQuery;
+import io.tiklab.rpc.annotation.Exporter;
 import io.tiklab.toolkit.beans.BeanMapper;
 import io.tiklab.core.page.Pagination;
 import io.tiklab.core.page.PaginationBuilder;
@@ -19,9 +20,10 @@ import javax.validation.constraints.NotNull;
 import java.util.List;
 
 /**
-* 事项附件服务接口
+* 事项附件接口
 */
 @Service
+@Exporter
 public class WorkAttachServiceImpl implements WorkAttachService {
 
     @Autowired
@@ -56,10 +58,14 @@ public class WorkAttachServiceImpl implements WorkAttachService {
 
     @Override
     public void deleteWorkAttachList(WorkAttachQuery workAttachQuery){
-        DeleteCondition deleteCondition = DeleteBuilders.createDelete(WorkAttachEntity.class)
-                .eq("workItemId", workAttachQuery.getWorkItemId())
-                .in("workItemId", workAttachQuery.getWorkItemIds())
-                .get();
+        DeleteBuilders deleteBuilders = DeleteBuilders.createDelete(WorkAttachEntity.class)
+                .eq("workItemId", workAttachQuery.getWorkItemId());
+
+
+        if(workAttachQuery.getWorkItemIds() != null && workAttachQuery.getWorkItemIds().length != 0){
+            deleteBuilders.in("workItemId", workAttachQuery.getWorkItemIds());
+        }
+        DeleteCondition deleteCondition = deleteBuilders.get();
         workAttachDao.deleteWorkAttach (deleteCondition);
     }
 
@@ -69,7 +75,7 @@ public class WorkAttachServiceImpl implements WorkAttachService {
 
         WorkAttach workAttach = BeanMapper.map(workAttachEntity, WorkAttach.class);
 
-        joinTemplate.joinQuery(workAttach);
+        joinTemplate.joinQuery(workAttach, new String[]{"workItem"});
 
         return workAttach;
     }
@@ -80,7 +86,7 @@ public class WorkAttachServiceImpl implements WorkAttachService {
 
         List<WorkAttach> workAttachList = BeanMapper.mapList(workAttachEntityList,WorkAttach.class);
 
-        joinTemplate.joinQuery(workAttachList);
+        joinTemplate.joinQuery(workAttachList, new String[]{"workItem"});
 
         return workAttachList;
     }
@@ -91,7 +97,7 @@ public class WorkAttachServiceImpl implements WorkAttachService {
 
         List<WorkAttach> workAttachList = BeanMapper.mapList(workAttachEntityList,WorkAttach.class);
 
-        joinTemplate.joinQuery(workAttachList);
+        joinTemplate.joinQuery(workAttachList, new String[]{"workItem"});
 
         return workAttachList;
     }
@@ -103,7 +109,7 @@ public class WorkAttachServiceImpl implements WorkAttachService {
 
         List<WorkAttach> workAttachList = BeanMapper.mapList(pagination.getDataList(),WorkAttach.class);
 
-        joinTemplate.joinQuery(workAttachList);
+        joinTemplate.joinQuery(workAttachList, new String[]{"workItem"});
 
         return PaginationBuilder.build(pagination,workAttachList);
     }

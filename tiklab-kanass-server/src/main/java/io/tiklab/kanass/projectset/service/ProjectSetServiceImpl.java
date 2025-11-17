@@ -1,6 +1,11 @@
 package io.tiklab.kanass.projectset.service;
 
 import io.tiklab.eam.common.context.LoginContext;
+import io.tiklab.kanass.common.SendMessageUtil;
+import io.tiklab.kanass.home.insight.service.ProjectInsightReportService;
+import io.tiklab.kanass.workitem.model.WorkItem;
+import io.tiklab.kanass.workitem.model.WorkItemQuery;
+import io.tiklab.message.message.model.MessageNoticePatch;
 import io.tiklab.privilege.dmRole.service.DmRoleService;
 import io.tiklab.privilege.role.model.PatchUser;
 import io.tiklab.kanass.project.project.model.Project;
@@ -23,7 +28,7 @@ import io.tiklab.user.dmUser.model.DmUser;
 import io.tiklab.user.dmUser.model.DmUserQuery;
 import io.tiklab.user.dmUser.service.DmUserService;
 import io.tiklab.user.user.model.User;
-import io.tiklab.user.user.service.UserService;
+import io.tiklab.user.user.service.UserProcessor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -32,6 +37,8 @@ import javax.validation.Valid;
 import javax.validation.constraints.NotNull;
 import java.text.SimpleDateFormat;
 import java.util.*;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 /**
@@ -39,7 +46,7 @@ import java.util.stream.Collectors;
 */
 @Service
 public class ProjectSetServiceImpl implements ProjectSetService {
-
+    public final ExecutorService executorService = Executors.newCachedThreadPool();
     @Autowired
     ProjectSetDao projectSetDao;
 
@@ -62,21 +69,86 @@ public class ProjectSetServiceImpl implements ProjectSetService {
     DmRoleService dmRoleService;
 
     @Autowired
-    UserService userService;
+    UserProcessor userProcessor;
+
+    @Autowired
+    ProjectInsightReportService projectInsightReportService;
+
+    @Autowired
+    SendMessageUtil sendMessageUtil;
+
+    // 创建项目集
+    void sendCreateProjectSetMessage(ProjectSet projectSet){
+        HashMap<String, Object> content = new HashMap<>();
+        content.put("projectSetName", projectSet.getName());
+        content.put("projectSetId", projectSet.getId());
+        String createUserId = LoginContext.getLoginId();
+        User user = userProcessor.findOne(createUserId);
+        content.put("creater", user.getNickname());
+        content.put("createUserIcon",user.getNickname().substring( 0, 1).toUpperCase());
+        content.put("receiveTime", new SimpleDateFormat("MM-dd").format(new Date()));
+
+        content.put("link", "/#/projectSet/${projectSetId}");
+        content.put("action", "创建项目集");
+        content.put("noticeId", "KANASS_PROJECTSET_CREATE");
+
+        sendMessageUtil.sendMessage(content);
+    }
+
+    // 更新项目集
+    void sendUpdateProjectSetMessage(ProjectSet projectSet){
+        HashMap<String, Object> content = new HashMap<>();
+        content.put("projectSetName", projectSet.getName());
+        content.put("projectSetId", projectSet.getId());
+        String createUserId = LoginContext.getLoginId();
+        User user = userProcessor.findOne(createUserId);
+        content.put("creater", user.getNickname());
+        content.put("createUserIcon",user.getNickname().substring( 0, 1).toUpperCase());
+        content.put("receiveTime", new SimpleDateFormat("MM-dd").format(new Date()));
+
+        content.put("link", "/#/projectSet/${projectSetId}");
+        content.put("action", "编辑项目集");
+        content.put("noticeId", "KANASS_PROJECTSET_UPDATE");
+
+        sendMessageUtil.sendMessage(content);
+    }
+
+    // 删除项目集
+    void sendDeleteProjectSetMessage(ProjectSet projectSet){
+        HashMap<String, Object> content = new HashMap<>();
+        content.put("projectSetName", projectSet.getName());
+        content.put("projectSetId", projectSet.getId());
+        String createUserId = LoginContext.getLoginId();
+        User user = userProcessor.findOne(createUserId);
+        content.put("creater", user.getNickname());
+        content.put("createUserIcon",user.getNickname().substring( 0, 1).toUpperCase());
+        content.put("receiveTime", new SimpleDateFormat("MM-dd").format(new Date()));
+
+        content.put("link", "/#/projectSet");
+        content.put("action", "删除项目集");
+        content.put("noticeId", "KANASS_PROJECTSET_DELETE");
+
+        sendMessageUtil.sendMessage(content);
+    }
 
     @Override
     public String createProjectSet(@NotNull @Valid ProjectSet projectSet) {
         String createUserId = LoginContext.getLoginId();
-        User user = userService.findOne(createUserId);
+        User user = userProcessor.findOne(createUserId);
         projectSet.setMaster(user);
+
+        // 默认状态未开始
+        projectSet.setStatus("0");
+
+        // 设置项目集头像颜色
         int color = new Random().nextInt(3) + 1;
         System.out.println(color);
         projectSet.setColor(color);
         projectSet.setCreator(createUserId);
+
+         // 设置创建时间
         String format = new SimpleDateFormat("yyyy-MM-dd").format(new Date());
         projectSet.setCreatTime(format);
-
-
 
         ProjectSetEntity projectSetEntity = BeanMapper.map(projectSet, ProjectSetEntity.class);
         String projectSetId = projectSetDao.createProjectSet(projectSetEntity);
@@ -84,9 +156,20 @@ public class ProjectSetServiceImpl implements ProjectSetService {
         String masterId = user.getId();
         initProjectSetDmRole(masterId, projectSetId);
 
+        projectSet.setId(projectSetId);
+
+        executorService.submit(() -> {
+            sendCreateProjectSetMessage(projectSet);
+        });
+
         return projectSetId;
     }
 
+    /**
+     * 初始化项目集角色
+     * @param masterId
+     * @param projectSetId
+     */
     public void initProjectSetDmRole(String masterId, String projectSetId){
         List<PatchUser> patchUsers = new ArrayList<PatchUser>();
         if(!masterId.equals("111111")){
@@ -132,6 +215,12 @@ public class ProjectSetServiceImpl implements ProjectSetService {
         ProjectSetEntity projectSetEntity = BeanMapper.map(projectSet, ProjectSetEntity.class);
 
         projectSetDao.updateProjectSet(projectSetEntity);
+
+        ProjectSet newProjectSet = findProjectSet(projectSet.getId());
+
+        executorService.submit(() -> {
+            sendUpdateProjectSetMessage(newProjectSet);
+        });
     }
 
     @Override
@@ -146,8 +235,13 @@ public class ProjectSetServiceImpl implements ProjectSetService {
                 projectService.updateProject(project);
             }
         }
+        ProjectSet newProjectSet = findProjectSet(id);
 
         projectSetDao.deleteProjectSet(id);
+
+        executorService.submit(() -> {
+            sendDeleteProjectSetMessage(newProjectSet);
+        });
     }
 
     @Override
@@ -170,24 +264,22 @@ public class ProjectSetServiceImpl implements ProjectSetService {
     public ProjectSet findProjectSet(@NotNull String id) {
         ProjectSet projectSet = findOne(id);
 
-        joinTemplate.joinQuery(projectSet);
+
+        joinTemplate.joinQuery(projectSet, new String[]{"master"});
         return projectSet;
     }
 
     @Override
     public List<ProjectSet> findAllProjectSet() {
         List<ProjectSetEntity> projectSetEntityList =  projectSetDao.findAllProjectSet();
-
         List<ProjectSet> projectSetList =  BeanMapper.mapList(projectSetEntityList,ProjectSet.class);
-
-        joinTemplate.joinQuery(projectSetList);
+        joinTemplate.joinQuery(projectSetList, new String[]{"master"});
            if (projectSetList.size() > 0){
                //查询项目集下面相关的项目
             for (ProjectSet projectSet:projectSetList){
                 Integer projectNum = projectSetDao.findProjectNum(projectSet.getId());
                 //添加数量
                 projectSet.setProjectNumber(projectNum);
-
             }
         }
         return projectSetList;
@@ -199,23 +291,54 @@ public class ProjectSetServiceImpl implements ProjectSetService {
 
         List<ProjectSet> projectSetList = BeanMapper.mapList(projectSetEntityList,ProjectSet.class);
         findProjectNum(projectSetList);
-        joinTemplate.joinQuery(projectSetList);
+        joinTemplate.joinQuery(projectSetList, new String[]{"master"});
 
         return projectSetList;
     }
 
     @Override
     public Pagination<ProjectSet> findProjectSetPage(ProjectSetQuery projectSetQuery) {
+        // 查找我所参与的私有项目
+        DmUserQuery dmUserQuery = new DmUserQuery();
+        String createUserId = LoginContext.getLoginId();
+        dmUserQuery.setUserId(createUserId);
+        List<DmUser> dmUserList = dmUserService.findDmUserList(dmUserQuery);
+        List<String> privateProjectSetIds = dmUserList.stream().map(DmUser::getDomainId).collect(Collectors.toList());
+
+        String[] ids = privateProjectSetIds.toArray(new String[privateProjectSetIds.size()]);
+        projectSetQuery.setProjectSetIds(ids);
 
         Pagination<ProjectSetEntity>  pagination = projectSetDao.findProjectSetPage(projectSetQuery);
 
         List<ProjectSet> projectSetList = BeanMapper.mapList(pagination.getDataList(),ProjectSet.class);
 
-        joinTemplate.joinQuery(projectSetList);
+        // 计算每个项目集的进度
+        for (ProjectSet projectSet : projectSetList) {
+            String id = projectSet.getId();
+            HashMap<String, String> param = new HashMap<>();
+            param.put("projectSetId", id);
+            Map<String, Integer> workItemCount = projectInsightReportService.statisticsTodoWorkByStatus(param);
+            int done = workItemCount.get("end");// 已完成
+            int all = workItemCount.get("total");// 所有
+            if (all != 0){
+                projectSet.setProgress(done * 100f / all);
+            }else {
+                projectSet.setProgress(0.00f);
+            }
+        }
+
+        findProjectNum(projectSetList);
+
+        joinTemplate.joinQuery(projectSetList, new String[]{"master"});
 
         return PaginationBuilder.build(pagination,projectSetList);
     }
 
+    /**
+     * 查询项目集下面的项目列表
+     * @param projectQuery
+     * @return
+     */
     @Override
     public List<Project> findProjectSetDetailList(ProjectQuery projectQuery) {
         List<Project> projectList = projectService.findProjectList(projectQuery);
@@ -231,19 +354,67 @@ public class ProjectSetServiceImpl implements ProjectSetService {
                 List<Map<String, Object>> doneList = projectWorkItemCount.stream().filter(workItem -> (workItem.get("project_id").equals(id) && workItem.get("work_status_code").equals("DONE"))).collect(Collectors.toList());
                 project.setEndWorkItemNumber(doneList.size());
 
-                DmUserQuery dmUserQuery = new DmUserQuery();
-                dmUserQuery.setDomainId(id);
-                List<DmUser> dmUserList = dmUserService.findDmUserList(dmUserQuery);
-                project.setMember(dmUserList.size());
+                // 统计项目预计工时和剩余工时
+                WorkItemQuery workItemQuery = new WorkItemQuery();
+                workItemQuery.setProjectId(id);
+                List<WorkItem> workItemList = workItemService.findWorkItemList(workItemQuery);
+                int estimateTime = 0;
+                int surplusTime = 0;
+                for (WorkItem workItem : workItemList) {
+                    estimateTime = estimateTime + (workItem.getEstimateTime() == null ? 0 : workItem.getEstimateTime());
+                    surplusTime = surplusTime + (workItem.getSurplusTime() == null ? 0 : workItem.getSurplusTime());
+                }
+                project.setEstimateTime(estimateTime);
+                project.setSurplusTime(surplusTime);
             }
         }
 
         return projectList;
     }
 
+    @Override
+    public Pagination<Project> findProjectSetDetailPage(ProjectQuery projectQuery) {
+        Pagination<Project> projectPage = projectService.findProjectPage(projectQuery);
+        if(!projectPage.getDataList().isEmpty()){
+            String projectIds = "(" + projectPage.getDataList().stream().map(item -> "'" + item.getId() + "'").collect(Collectors.joining(", ")) + ")";
+            List<Map<String, Object>> projectWorkItemCount = projectService.findProjectWorkItemStatus(projectIds);
+            for (Project project : projectPage.getDataList()) {
+                String id = project.getId();
+                List<Map<String, Object>> allList = projectWorkItemCount.stream().filter(workItem -> workItem.get("project_id").equals(id)).collect(Collectors.toList());
+                int size = allList.size();
+                project.setWorkItemNumber(size);
+
+                List<Map<String, Object>> doneList = projectWorkItemCount.stream().filter(workItem -> (workItem.get("project_id").equals(id) && workItem.get("work_status_code").equals("DONE"))).collect(Collectors.toList());
+                project.setEndWorkItemNumber(doneList.size());
+
+                DmUserQuery dmUserQuery = new DmUserQuery();
+                dmUserQuery.setDomainId(id);
+                List<DmUser> dmUserList = dmUserService.findDmUserList(dmUserQuery);
+                project.setMember(dmUserList.size());
+
+                // 统计项目预计工时和剩余工时
+                WorkItemQuery workItemQuery = new WorkItemQuery();
+                workItemQuery.setProjectId(id);
+                List<WorkItem> workItemList = workItemService.findWorkItemList(workItemQuery);
+                int estimateTime = 0;
+                int surplusTime = 0;
+                for (WorkItem workItem : workItemList) {
+                    estimateTime = estimateTime + (workItem.getEstimateTime() == null ? 0 : workItem.getEstimateTime());
+                    surplusTime = surplusTime + (workItem.getSurplusTime() == null ? 0 : workItem.getSurplusTime());
+                }
+                project.setEstimateTime(estimateTime);
+                project.setSurplusTime(surplusTime);
+            }
+        }
+
+        return projectPage;
+    }
 
 
-
+    /**
+     * 查询所有关联项目集项目和未关联项目
+     * @return
+     */
     @Override
     public Map findProjectIsOrNotRe()  {
         Map projectMap = new HashMap<>();
@@ -260,6 +431,22 @@ public class ProjectSetServiceImpl implements ProjectSetService {
         return projectMap;
     }
 
+    /**
+     * 查询所有未关联项目
+     *
+     * @return
+     */
+    @Override
+    public Pagination<Project> findNotRelateProjectPage(ProjectQuery projectQuery) {
+        projectQuery.setProjectSetIdNull(true);
+        Pagination<Project> projectPage = projectService.findProjectPage(projectQuery);
+        return projectPage;
+    }
+
+    /**
+     * 添加关联项目
+     * @param projectSet
+     */
     @Override
     public void addRelevance(ProjectSet projectSet) {
         //关联的项目id
@@ -273,35 +460,11 @@ public class ProjectSetServiceImpl implements ProjectSetService {
     }
 
 
-
     /**
-     * 查询事项
-     * @param id,type
+     * 查找关注的项目集列表
+     * @param projectSetQuery
+     * @return
      */
-//    public List<WorkItem> findWorkItemList(String id, Integer type){
-//        WorkItemQuery workItemQuery = new WorkItemQuery();
-//        if (type==0){
-//            workItemQuery.setProjectId(id);
-//        }
-//       if (type==1){
-//           workItemQuery.setCurrentSprintId(id);
-//       }
-//        List<WorkItem> workItemList = workItemService.findWorkItemList(workItemQuery);
-//        joinTemplate.joinQuery(workItemList);
-//        return workItemList;
-//    }
-
-    /**
-     * 查询迭代
-     * @param id
-     */
-    public List<Sprint> findSprint(String id){
-        SprintQuery sprintQuery = new SprintQuery();
-        sprintQuery.setProjectId(id);
-        List<Sprint> sprintList = sprintService.findSprintList(sprintQuery);
-        return sprintList;
-    }
-
     @Override
     public List<ProjectSet> findFocusProjectSetList(ProjectSetQuery projectSetQuery) {
         String userId = LoginContext.getLoginId();
@@ -311,11 +474,16 @@ public class ProjectSetServiceImpl implements ProjectSetService {
 
         List<ProjectSet> projectSetList = BeanMapper.mapList(projectSetEntityList,ProjectSet.class);
         findProjectNum(projectSetList);
-        joinTemplate.joinQuery(projectSetList);
+        joinTemplate.joinQuery(projectSetList, new String[]{"master"});
 
         return projectSetList;
     }
 
+    /**
+     * 查找最近查看的项目集列表
+     * @param projectSetQuery
+     * @return
+     */
     @Override
     public List<ProjectSet> findRecentProjectSetList(ProjectSetQuery projectSetQuery) {
         String userId = LoginContext.getLoginId();
@@ -325,12 +493,11 @@ public class ProjectSetServiceImpl implements ProjectSetService {
 
         List<ProjectSet> projectSetList = BeanMapper.mapList(projectSetEntityList,ProjectSet.class);
         findProjectNum(projectSetList);
-        joinTemplate.joinQuery(projectSetList);
+        joinTemplate.joinQuery(projectSetList, new String[]{"master"});
 
         return projectSetList;
     }
 
-//    @Override
     /**
      * 查看我能看到的所有项目集
      */
@@ -349,13 +516,32 @@ public class ProjectSetServiceImpl implements ProjectSetService {
         List<ProjectSetEntity> joinProjectSetList = projectSetDao.findJoinProjectSetList(projectSetQuery);
         List<ProjectSet> projectSetList = BeanMapper.mapList(joinProjectSetList,ProjectSet.class);
 
+
+        // 计算每个项目集的进度
+        for (ProjectSet projectSet : projectSetList) {
+            String id = projectSet.getId();
+            HashMap<String, String> param = new HashMap<>();
+            param.put("projectSetId", id);
+            Map<String, Integer> workItemCount = projectInsightReportService.statisticsTodoWorkByStatus(param);
+            int done = workItemCount.get("end");// 已完成
+            int all = workItemCount.get("total");// 所有
+            if (all != 0){
+                projectSet.setProgress(done * 100f / all);
+            }else {
+                projectSet.setProgress(0.00f);
+            }
+        }
+
         findProjectNum(projectSetList);
-        joinTemplate.joinQuery(projectSetList);
+        joinTemplate.joinQuery(projectSetList, new String[]{"master"});
         return projectSetList;
 
     }
 
-
+    /**
+     * 查找对应添加项目的个数
+     * @param projectSetList
+     */
     public void findProjectNum(List<ProjectSet> projectSetList){
         int size = projectSetList.size();
         if(size > 0){
@@ -368,7 +554,6 @@ public class ProjectSetServiceImpl implements ProjectSetService {
                 List<Project> collect = projectList.stream().filter(item -> item.getProjectSetId().equals(projectSet.getId())).collect(Collectors.toList());
                 projectSet.setProjectNumber(collect.size());
             }
-
         }
     }
 
@@ -409,6 +594,28 @@ public class ProjectSetServiceImpl implements ProjectSetService {
         }
 
         return recentProjectSetList;
+    }
+
+    /**
+     * 查询项目集数量 包括 所有 我收藏的 我创建的
+     * @return
+     */
+    @Override
+    public Map<String, Integer> findProjectSetCount(ProjectSetQuery projectSetQuery) {
+//        ProjectSetQuery  projectSetQuery = new ProjectSetQuery();
+        // 查找我所参与的私有项目
+        DmUserQuery dmUserQuery = new DmUserQuery();
+        String createUserId = LoginContext.getLoginId();
+        dmUserQuery.setUserId(createUserId);
+        List<DmUser> dmUserList = dmUserService.findDmUserList(dmUserQuery);
+        List<String> privateProjectSetIds = dmUserList.stream().map(DmUser::getDomainId).collect(Collectors.toList());
+
+        String[] ids = privateProjectSetIds.toArray(new String[privateProjectSetIds.size()]);
+        projectSetQuery.setProjectSetIds(ids);
+        projectSetQuery.setCreator(createUserId);
+
+        Map<String, Integer> projectSetCount = projectSetDao.findProjectSetCount(projectSetQuery);
+        return projectSetCount;
     }
 
 }

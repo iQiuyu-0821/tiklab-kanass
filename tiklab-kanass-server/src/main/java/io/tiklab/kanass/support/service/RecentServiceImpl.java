@@ -47,7 +47,11 @@ public class RecentServiceImpl implements RecentService {
     @Autowired
     WorkItemService workItemService;
 
-
+    /**
+     * 创建最近访问的项目，项目集，事项
+     * @param recent
+     * @return
+     */
     @Override
     public String createRecent(@NotNull @Valid Recent recent) {
         recent.setRecentTime(new Timestamp(System.currentTimeMillis()));
@@ -72,6 +76,12 @@ public class RecentServiceImpl implements RecentService {
         return id;
     }
 
+    /**
+     * 创建最近查看的，多于5条的删掉之前的
+     * @param recent
+     * @param num
+     * @return
+     */
     public String createRecentByCondition(Recent recent, int num){
         String id = new String();
         RecentQuery recentQuery = new RecentQuery();
@@ -154,7 +164,7 @@ public class RecentServiceImpl implements RecentService {
     public Recent findRecent(@NotNull String id) {
         Recent recent = findOne(id);
 
-        joinTemplate.joinQuery(recent);
+        joinTemplate.joinQuery(recent, new String[]{"project", "projectType"});
 
         return recent;
     }
@@ -165,7 +175,7 @@ public class RecentServiceImpl implements RecentService {
 
         List<Recent> recentList =  BeanMapper.mapList(recentEntityList,Recent.class);
 
-        joinTemplate.joinQuery(recentList);
+        joinTemplate.joinQuery(recentList, new String[]{"project", "projectType"});
 
         return recentList;
     }
@@ -173,25 +183,37 @@ public class RecentServiceImpl implements RecentService {
     public List<Recent> findRecentList(RecentQuery recentQuery) {
         List<RecentEntity> recentEntityList = recentDao.findRecentList(recentQuery);
         List<Recent> recentList =  BeanMapper.mapList(recentEntityList,Recent.class);
-        joinTemplate.joinQuery(recentList);
+        joinTemplate.joinQuery(recentList, new String[]{"project", "projectType"});
 
         return recentList;
     }
+
+    /**
+     * 获取最近查看的事项列表、项目列表
+     * @param recentQuery
+     * @return
+     */
     @Override
     public List<Recent> findRecentListToModel(RecentQuery recentQuery) {
+        //查询最近访问的实体列表
         List<RecentEntity> recentEntityList = recentDao.findRecentList(recentQuery);
 
         List<Recent> recentList = new ArrayList<>();
+        //使用流操作和 Collectors.groupingBy 方法，将 recentEntityList 按照模型类型（model）分组
         Map<String, List<RecentEntity>> collect = recentEntityList.stream().collect(Collectors.groupingBy(RecentEntity::getModel));
+        //获取模型类型为 "project" 的最近访问记录列表 projectRecentList
         List<RecentEntity> projectRecentList = collect.get("project");
 
         List<Project> projectList = new ArrayList<>();
         if(projectRecentList != null && projectRecentList.size() > 0){
+            //提取所有项目的 ID 列表 projectIds
             List<String> projectIds = projectRecentList.stream().map((project -> project.getModelId())).collect(Collectors.toList());
             String[] ids = new String[projectIds.size()];
+            //将 projectIds 转换为数组 ids
             ids = projectIds.toArray(ids);
             ProjectQuery projectQuery = new ProjectQuery();
             projectQuery.setProjectIds(ids);
+            //调方法，查询与这些 ID 对应的项目列表
             projectList = projectService.findProjectList(projectQuery);
         }
 
@@ -243,7 +265,7 @@ public class RecentServiceImpl implements RecentService {
 
         List<Recent> recentList = BeanMapper.mapList(pagination.getDataList(),Recent.class);
 
-        joinTemplate.joinQuery(recentList);
+        joinTemplate.joinQuery(recentList, new String[]{"project", "projectType"});
 
         return PaginationBuilder.build(pagination,recentList);
     }

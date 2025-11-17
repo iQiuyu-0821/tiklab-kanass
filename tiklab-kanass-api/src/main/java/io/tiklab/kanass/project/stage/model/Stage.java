@@ -2,6 +2,7 @@ package io.tiklab.kanass.project.stage.model;
 
 import com.alibaba.fastjson.annotation.JSONField;
 import com.fasterxml.jackson.annotation.JsonFormat;
+import io.tiklab.kanass.project.appraised.model.Appraised;
 import io.tiklab.kanass.project.project.model.Project;
 import io.tiklab.kanass.workitem.model.WorkItem;
 import io.tiklab.toolkit.beans.annotation.Mapper;
@@ -9,10 +10,11 @@ import io.tiklab.toolkit.beans.annotation.Mapping;
 import io.tiklab.toolkit.beans.annotation.Mappings;
 import io.tiklab.core.BaseModel;
 import io.tiklab.toolkit.join.annotation.Join;
-import io.tiklab.toolkit.join.annotation.JoinQuery;
+import io.tiklab.toolkit.join.annotation.JoinField;
 import io.tiklab.postin.annotation.ApiModel;
 import io.tiklab.postin.annotation.ApiProperty;
 import io.tiklab.user.user.model.User;
+import org.springframework.beans.PropertyValue;
 
 import java.util.List;
 
@@ -34,7 +36,7 @@ public class Stage extends BaseModel {
     @Mappings({
             @Mapping(source = "parentStage.id",target = "parentId")
     })
-    @JoinQuery(key = "id")
+    @JoinField(key = "id")
     private Stage parentStage;
 
     @ApiProperty(name="treePath",desc="所有上级事项按层级排序")
@@ -63,11 +65,14 @@ public class Stage extends BaseModel {
     @ApiProperty(name="progress",desc="进度，百分比")
     private java.lang.Integer progress = 0;
 
+    private int doneWorkCount = 0;
+    private int totalWorkCount = 0;
+
     @ApiProperty(name="master",desc="负责人")
     @Mappings({
             @Mapping(source = "master.id",target = "master")
     })
-    @JoinQuery(key = "id")
+    @JoinField(key = "id")
     private User master;
 
     @ApiProperty(name="desc",desc="desc")
@@ -78,7 +83,7 @@ public class Stage extends BaseModel {
             @Mapping(source = "project.id",target = "projectId")
     })
 
-    @JoinQuery(key = "id")
+    @JoinField(key = "id")
     private Project project;
 
     @ApiProperty(name="startTime",desc="startTime")
@@ -90,6 +95,9 @@ public class Stage extends BaseModel {
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     @JSONField(format = "yyyy-MM-dd HH:mm:ss")
     private String endTime;
+
+    @ApiProperty(name="appraisedList",desc="评审列表")
+    private List<Appraised> appraisedList;
 
     public java.lang.String getId() {
         return id;
@@ -222,5 +230,33 @@ public class Stage extends BaseModel {
 
     public void setColor(int color) {
         this.color = color;
+    }
+
+    public boolean isChangeParent() {
+        return isChangeParent;
+    }
+
+    public int getDoneWorkCount() {
+        return doneWorkCount;
+    }
+
+    public void setDoneWorkCount(int doneWorkCount) {
+        this.doneWorkCount = doneWorkCount;
+    }
+
+    public int getTotalWorkCount() {
+        return totalWorkCount;
+    }
+
+    public void setTotalWorkCount(int totalWorkCount) {
+        this.totalWorkCount = totalWorkCount;
+    }
+
+    public List<Appraised> getAppraisedList() {
+        return appraisedList;
+    }
+
+    public void setAppraisedList(List<Appraised> appraisedList) {
+        this.appraisedList = appraisedList;
     }
 }

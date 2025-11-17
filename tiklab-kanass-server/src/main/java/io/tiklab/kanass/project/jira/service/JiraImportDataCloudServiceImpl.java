@@ -7,6 +7,7 @@ import io.tiklab.flow.flow.service.DmFlowService;
 import io.tiklab.flow.statenode.model.StateNodeFlow;
 import io.tiklab.flow.statenode.service.StateNodeFlowService;
 import io.tiklab.form.field.model.SelectItem;
+import io.tiklab.kanass.common.ErrorCode;
 import io.tiklab.kanass.project.module.model.Module;
 import io.tiklab.kanass.project.module.service.ModuleService;
 import io.tiklab.kanass.project.project.model.Project;
@@ -33,7 +34,7 @@ import io.tiklab.user.dmUser.model.DmUserQuery;
 import io.tiklab.user.dmUser.service.DmUserService;
 import io.tiklab.user.user.model.User;
 import io.tiklab.user.user.model.UserQuery;
-import io.tiklab.user.user.service.UserService;
+import io.tiklab.user.user.service.UserProcessor;
 import org.apache.commons.lang.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -43,12 +44,14 @@ import org.springframework.transaction.annotation.EnableTransactionManagement;
 import org.springframework.util.ObjectUtils;
 import org.w3c.dom.Element;
 
+import javax.annotation.PostConstruct;
+import java.nio.file.Paths;
 import java.sql.Date;
 import java.text.SimpleDateFormat;
 import java.util.*;
 
 /**
- * jira 数据导入服务
+ * cloud 版本jira 数据导入
  */
 @Service
 @EnableTransactionManagement
@@ -97,7 +100,7 @@ public class JiraImportDataCloudServiceImpl implements JiraImportDataCloudServic
     WorkTypeDmService workTypeDmService;
 
     @Autowired
-    UserService userService;
+    UserProcessor userProcessor;
 
     @Autowired
     DmFlowService dmFlowService;
@@ -106,8 +109,16 @@ public class JiraImportDataCloudServiceImpl implements JiraImportDataCloudServic
     StateNodeFlowService stateNodeFlowService;
 
 
-    @Value("${unzip.path}")
+    @Value("${DATA_HOME}")
+    String dataHome;
+
     String unzipAddress;
+
+    @PostConstruct
+    public void init(){
+        this.unzipAddress = Paths.get(dataHome,"unzip", "Jira").toString();
+    }
+
     private ThreadLocal<ArrayList<Element>> GlobalUserElementList = new ThreadLocal<>();
     private ThreadLocal<ArrayList<Element>> GlobalApplicationUserElementList = new ThreadLocal<>();
     private ThreadLocal<ArrayList<Element>> UserHistoryItemElementList = new ThreadLocal<ArrayList<Element>>();
@@ -177,6 +188,7 @@ public class JiraImportDataCloudServiceImpl implements JiraImportDataCloudServic
 
             ArrayList<String> doneStatusIds = new ArrayList<>();
 
+            // 根据标签，归类各个模型
             for (Element element : elements) {
                 String name = element.getTagName();
                 switch (name){
@@ -324,6 +336,12 @@ public class JiraImportDataCloudServiceImpl implements JiraImportDataCloudServic
             throw new ApplicationException(e);
         }
     }
+
+    /**
+     * 导入迭代
+     * @param customFieldValueElementList
+     * @return
+     */
     public ArrayList<Element> getSprintCustomField(ArrayList<Element> customFieldValueElementList){
         ArrayList<Element> fieldValueElementList = new ArrayList<>();
         ArrayList<Element> elementList = this.CustomFieldElementList.get();
@@ -342,6 +360,8 @@ public class JiraImportDataCloudServiceImpl implements JiraImportDataCloudServic
         }
         return fieldValueElementList;
     }
+
+
     public void setGroupItemIssue(){
         for (Element changeItemElement : this.ChangeItemElementList.get()) {
             String group = changeItemElement.getAttribute("group");
@@ -366,7 +386,7 @@ public class JiraImportDataCloudServiceImpl implements JiraImportDataCloudServic
             UserQuery userQuery = new UserQuery();
             userQuery.setEmail(emailAddress);
 
-            List<User> userList = userService.findUserList(userQuery);
+            List<User> userList = userProcessor.findUserList(userQuery);
             if(ObjectUtils.isEmpty(userList)){
                 User user = new User();
                 user.setNickname(displayName);
@@ -378,11 +398,11 @@ public class JiraImportDataCloudServiceImpl implements JiraImportDataCloudServic
                 user.setType(0);
 
                 try {
-                    String userId = userService.createUser(user);
+                    String userId = userProcessor.createUser(user);
                     element.setAttribute("newId", userId);
                     System.out.println( element.getAttribute("newId"));
                 }catch (Exception e){
-                    throw new ApplicationException(2000,"成员添加失败" + e.getMessage());
+                    throw new ApplicationException(ErrorCode.CREATE_ERROR,"成员添加失败" + e.getMessage());
                 }
             }else {
                 User user = userList.get(0);
@@ -450,7 +470,7 @@ public class JiraImportDataCloudServiceImpl implements JiraImportDataCloudServic
             project1.setEndTime(currentSqlDate);
 
             try {
-                String jiraProjectId = projectService.createJiraProject(project1);
+                String jiraProjectId = projectService.createImportProject(project1);
                 element.setAttribute("newId", jiraProjectId);
                 Map<String, String> roleIds = setProjectRole(jiraProjectId);
                 setProjectUser(element, roleIds);
@@ -473,7 +493,7 @@ public class JiraImportDataCloudServiceImpl implements JiraImportDataCloudServic
                 CurrentProject.put(createUserId + "project",project1);
             }catch (Exception e) {
                 Percent.put(createUserId + "status", 2);
-                throw new ApplicationException(2000, "项目添加失败" + e.getMessage());
+                throw new ApplicationException(ErrorCode.CREATE_ERROR, "项目添加失败" + e.getMessage());
             }
         }
     }
@@ -813,7 +833,7 @@ public class JiraImportDataCloudServiceImpl implements JiraImportDataCloudServic
                             }
                         }
                     }
-                    String workId = workItemService.createJiraWorkItem(workItem);
+                    String workId = workItemService.createImportWorkItem(workItem);
                     element.setAttribute("newId", workId);
                     workItem.setId(workId);
                     workItem.setRootId(workId + ";");
@@ -827,7 +847,7 @@ public class JiraImportDataCloudServiceImpl implements JiraImportDataCloudServic
                 }
             }
         }catch (Exception e){
-            throw new ApplicationException(2000, "添加事项失败" + e.getMessage());
+            throw new ApplicationException(ErrorCode.CREATE_ERROR, "添加事项失败" + e.getMessage());
         }
     }
 
@@ -974,7 +994,7 @@ public class JiraImportDataCloudServiceImpl implements JiraImportDataCloudServic
                                 try {
                                     dmUserService.createDmUserEntity(dmUser);
                                 }catch (Exception e){
-                                    throw new ApplicationException(2000,"项目成员添加失败" + e.getMessage());
+                                    throw new ApplicationException(ErrorCode.CREATE_ERROR,"项目成员添加失败" + e.getMessage());
                                 }
                                 // 创建角色与项目成员的关联
                                 try{
@@ -988,7 +1008,7 @@ public class JiraImportDataCloudServiceImpl implements JiraImportDataCloudServic
                                         dmRoleUserService.createDmRoleUser(dmRoleUser);
                                     }
                                 }catch (Exception e){
-                                    throw new ApplicationException(2000,"项目角色成员添加失败" + e.getMessage());
+                                    throw new ApplicationException(ErrorCode.CREATE_ERROR,"项目角色成员添加失败" + e.getMessage());
 
                                 }
 
@@ -1020,7 +1040,7 @@ public class JiraImportDataCloudServiceImpl implements JiraImportDataCloudServic
                         try {
                             dmUserService.createDmUserEntity(dmUser);
                         }catch (Exception e){
-                            throw new ApplicationException(2000,"项目成员添加失败" + e.getMessage());
+                            throw new ApplicationException(ErrorCode.CREATE_ERROR,"项目成员添加失败" + e.getMessage());
                         }
                         // 创建角色与项目成员的关联
                         try{
@@ -1034,7 +1054,7 @@ public class JiraImportDataCloudServiceImpl implements JiraImportDataCloudServic
                                 dmRoleUserService.createDmRoleUser(dmRoleUser);
                             }
                         }catch (Exception e){
-                            throw new ApplicationException(2000,"项目角色成员添加失败" + e.getMessage());
+                            throw new ApplicationException(ErrorCode.CREATE_ERROR,"项目角色成员添加失败" + e.getMessage());
 
                         }
 
@@ -1092,12 +1112,12 @@ public class JiraImportDataCloudServiceImpl implements JiraImportDataCloudServic
                     roleIds.put("common", dmRole1);
                 }
 
-                if(businessType == 1){
+                if(businessType == 2){
                     roleIds.put("admin", dmRole1);
                 }
             }
         }catch (Exception e){
-            throw new ApplicationException(2000,"项目角色添加失败" + e.getMessage());
+            throw new ApplicationException(ErrorCode.CREATE_ERROR,"项目角色添加失败" + e.getMessage());
         }
 
         return roleIds;

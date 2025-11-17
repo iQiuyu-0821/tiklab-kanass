@@ -18,13 +18,20 @@ import io.tiklab.form.field.model.SelectItem;
 import io.tiklab.form.field.model.SelectItemRelation;
 import io.tiklab.form.field.model.SelectItemRelationQuery;
 import io.tiklab.form.field.service.SelectItemRelationService;
+import io.tiklab.form.field.service.SelectItemService;
+import io.tiklab.kanass.common.ErrorCode;
+import io.tiklab.kanass.common.IDGeneratorUtil;
+import io.tiklab.kanass.common.SendMessageUtil;
 import io.tiklab.kanass.project.project.model.Project;
+import io.tiklab.kanass.project.project.model.ProjectQuery;
+import io.tiklab.kanass.project.test.service.TestRepositoryService;
 import io.tiklab.kanass.project.version.model.ProjectVersion;
 import io.tiklab.kanass.project.version.service.ProjectVersionService;
 import io.tiklab.kanass.project.worklog.model.WorkLogQuery;
 import io.tiklab.kanass.project.worklog.service.WorkLogService;
 import io.tiklab.kanass.sprint.model.Sprint;
 import io.tiklab.kanass.sprint.service.SprintService;
+import io.tiklab.kanass.workitem.entity.WorkProductPlanEntity;
 import io.tiklab.message.message.model.SendMessageNotice;
 import io.tiklab.message.message.service.SendMessageNoticeService;
 import io.tiklab.privilege.vRole.model.VRoleDomain;
@@ -60,7 +67,9 @@ import io.tiklab.user.dmUser.model.DmUser;
 import io.tiklab.user.dmUser.model.DmUserQuery;
 import io.tiklab.user.dmUser.service.DmUserService;
 import io.tiklab.user.user.model.User;
-import io.tiklab.user.user.service.UserService;
+import io.tiklab.user.user.service.UserProcessor;
+import org.apache.commons.collections4.CollectionUtils;
+import org.aspectj.weaver.ast.Var;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -69,6 +78,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.ObjectUtils;
 import org.springframework.util.StringUtils;
 
+import javax.mail.FetchProfile;
 import javax.validation.Valid;
 import javax.validation.constraints.NotNull;
 import java.lang.reflect.Method;
@@ -79,7 +89,9 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static java.util.stream.Collectors.collectingAndThen;
 import static java.util.stream.Collectors.toCollection;
@@ -125,6 +137,12 @@ public class WorkItemServiceImpl implements WorkItemService {
     StateNodeService stateNodeService;
 
     @Autowired
+    WorkTypeService workTypeService;
+
+    @Autowired
+    SelectItemService selectItemService;
+
+    @Autowired
     JoinTemplate joinTemplate;
 
     @Autowired
@@ -150,7 +168,7 @@ public class WorkItemServiceImpl implements WorkItemService {
 
 
     @Autowired
-    UserService userService;
+    UserProcessor userProcessor;
 
     @Autowired
     DmUserService dmUserService;
@@ -187,29 +205,40 @@ public class WorkItemServiceImpl implements WorkItemService {
     @Autowired
     ProjectService projectService;
 
+    @Autowired
+    TestRepositoryService testRepositoryService;
+
     @Value("${base.url:null}")
     String baseUrl;
 
+    @Autowired
+    SendMessageUtil sendMessageUtil;
+
+    @Autowired
+    WorkTransitionHistoryService workTransitionHistoryService;
+
     /**
-     * 设置事项id
+     * 设置事项code
      */
     public String setWorkItemCode(WorkItem workItem){
         String projectId = workItem.getProject().getId();
         String projectKey = projectService.findProject(projectId).getProjectKey();
-        Integer maxOrderNum = workItemDao.findMaxIdWorkItem(projectId);
+//        Integer maxOrderNum = workItemDao.findMaxIdWorkItem(projectId);
+        WorkItemEntity maxWorkItem = workItemDao.findMaxOrderNumWorkItem(projectId);
+        Integer maxOrderNum = 1;
         //项目key - id
-        String newId = new String();
-        if(maxOrderNum != null){
-            maxOrderNum = maxOrderNum + 1;
+        String newCode = new String();
+        if(maxWorkItem != null){
+            maxOrderNum = maxWorkItem.getOrderNum() + 1;
             int idInt = maxOrderNum;
-            newId = projectKey.concat("-" + String.valueOf(idInt));
+            newCode = IDGeneratorUtil.incrementID(maxWorkItem.getCode());
         }else {
             maxOrderNum = 1;
-            newId = projectKey.concat("-" + String.valueOf(1));
+            newCode = IDGeneratorUtil.generateID();
         }
         workItem.setOrderNum(maxOrderNum);
-        workItem.setCode(newId);
-        return newId;
+        workItem.setCode(newCode);
+        return newCode;
     }
 
     /**
@@ -223,44 +252,18 @@ public class WorkItemServiceImpl implements WorkItemService {
         content.put("workTypeIcon", workItem.getWorkTypeSys().getIconUrl());
         content.put("workType", workItem.getWorkTypeSys().getName());
         content.put("projectId", workItem.getProject().getId());
-        if(workItem.getSprint() != null) {
-            content.put("sprintId", workItem.getSprint().getId());
-        }
-        if(workItem.getProjectVersion() != null) {
-            content.put("versionId", workItem.getProjectVersion().getId());
-        }
-        Message message = new Message();
-        MessageType messageType = new MessageType();
-        messageType.setId("KANASS_MESSAGETYPE_TASKTODO");
-        message.setMessageType(messageType);
 
         String createUserId = LoginContext.getLoginId();
-        User user = userService.findOne(createUserId);
-        content.put("createUser", user);
+        User user = userProcessor.findOne(createUserId);
+        content.put("creater", user.getNickname());
         content.put("createUserIcon",user.getNickname().substring( 0, 1).toUpperCase());
         content.put("receiveTime", new SimpleDateFormat("MM-dd").format(new Date()));
 
-        // 接收者
-        User assigner = workItem.getAssigner();
-        List<MessageReceiver> objects = new ArrayList<>();
-        MessageReceiver messageReceiver = new MessageReceiver();
-        messageReceiver.setUserId(assigner.getId());
+        content.put("link", "/project/${projectId}/work/${workItemId}");
+        content.put("action", "创建事项");
+        content.put("noticeId", "KANASS_WORKITEM_CREATE");
 
-        objects.add(messageReceiver);
-        message.setMessageReceiverList(objects);
-        message.setBaseUrl(baseUrl);
-        message.setLink("/project/${projectId}/workitem/${workItemId}");
-        message.setAction(workItem.getTitle());
-        message.setSendId(user.getId());
-        message.setData(content);
-
-        message.setMessageSendTypeId("site");
-        sendMessageNoticeService.sendMessage(message);
-
-        message.setId(null);
-        message.setMessageSendTypeId("qywechat");
-        sendMessageNoticeService.sendMessage(message);
-
+        sendMessageUtil.sendDomainMessage(content, workItem.getProject().getId());
     }
 
     /**
@@ -268,55 +271,31 @@ public class WorkItemServiceImpl implements WorkItemService {
      * @param workItem
      * @param receiver
      */
-    void sendMessageForUpdateAssigner(WorkItem workItem, User receiver){
+    void sendMessageForUpdate(WorkItem workItem, User receiver, String fieldName){
         HashMap<String, Object> content = new HashMap<>();
         content.put("workItemTitle", workItem.getTitle());
         content.put("workItemId", workItem.getId());
-        content.put("workTypeIcon", workItem.getWorkTypeSys().getIconUrl());
-        content.put("workType", workItem.getWorkTypeSys().getName());
         content.put("projectId", workItem.getProject().getId());
-        content.put("receiverIcon",receiver.getNickname().substring(0, 1));
-        content.put("receiver", receiver);
+        content.put("fieldName", fieldName);
 
-        if(workItem.getSprint() != null) {
-            content.put("sprintId", workItem.getSprint().getId());
-        }
-        if(workItem.getProjectVersion() != null) {
-            content.put("versionId", workItem.getProjectVersion().getId());
-        }
         String createUserId = LoginContext.getLoginId();
-        User user = userService.findOne(createUserId);
-        content.put("createUser", user);
+        User user = userProcessor.findOne(createUserId);
+        content.put("creater", user.getNickname());
         content.put("createUserIcon",user.getNickname().substring( 0, 1).toUpperCase());
         content.put("receiveTime", new SimpleDateFormat("MM-dd").format(new Date()));
 
-        Message message = new Message();
-        MessageType messageType = new MessageType();
-        messageType.setId("KANASS_MESSAGETYPE_TASKTODO");
-        message.setMessageType(messageType);
-        message.setData(content);
+        content.put("link", "/project/${projectId}/work/${workItemId}");
+        content.put("action", "编辑事项");
+        content.put("noticeId", "KANASS_WORKITEM_UPDATE");
 
-        // 接收者
-        List<MessageReceiver> objects = new ArrayList<>();
-        MessageReceiver messageReceiver = new MessageReceiver();
-        messageReceiver.setUserId(receiver.getId());
-        objects.add(messageReceiver);
-        message.setMessageReceiverList(objects);
-
-
-        message.setBaseUrl(baseUrl);
-        message.setLink("/project/${projectId}/workitem/${workItemId}");
-        message.setAction(workItem.getTitle());
-        message.setMessageSendTypeId("site");
-        // 发送者
-        message.setSendId(user.getId());
-        sendMessageNoticeService.sendMessage(message);
-
-        message.setId(null);
-        message.setMessageSendTypeId("qywechat");
-        sendMessageNoticeService.sendMessage(message);
+        sendMessageUtil.sendDomainMessage(content, workItem.getProject().getId());
     }
 
+    /**
+     * 事项状态变化发送消息
+     * @param oldWorkItem
+     * @param workItem
+     */
     void sendMessageForUpdateStatus(WorkItem oldWorkItem, WorkItem workItem){
         String projectId = oldWorkItem.getProject().getId();
         String workItemId = workItem.getId();
@@ -327,48 +306,63 @@ public class WorkItemServiceImpl implements WorkItemService {
         content.put("projectId", projectId);
         content.put("oldValue", oldWorkItem.getWorkStatusNode().getName());
         content.put("newValue", workItem.getWorkStatusNode().getName());
-        if(workItem.getSprint() != null) {
-            content.put("sprintId", workItem.getSprint().getId());
-        }
-        if(workItem.getProjectVersion() != null) {
-            content.put("versionId", workItem.getProjectVersion().getId());
-        }
+
         String createUserId = LoginContext.getLoginId();
-        User user = userService.findOne(createUserId);
-        content.put("createUser", user);
+        User user = userProcessor.findOne(createUserId);
+        content.put("creater", user.getNickname());
         content.put("createUserIcon",user.getNickname().substring( 0, 1).toUpperCase());
+//        content.put("createUserIcon",user.getNickname().substring( 0, 1).toUpperCase());
         content.put("receiveTime", new SimpleDateFormat("MM-dd").format(new Date()));
         String msg = JSONObject.toJSONString(content);
-//        Message message = new Message();
-//        MessageType messageType = new MessageType();
-//        messageType.setId("KANASS_MESSAGETYPE_UPDATESTATUS");
 
+        content.put("link", "/project/${projectId}/workitem");
+        content.put("action", "事项状态流转");
+        content.put("noticeId", "KANASS_WORKITEM_UPDATESTATUS");
 
-        SendMessageNotice sendMessageNotice = new SendMessageNotice();
-        sendMessageNotice.setId("KANASS_MESSAGE_UPDATESTATUS");
-        sendMessageNotice.setDomainId(projectId);
-        sendMessageNotice.setLink("/project/${projectId}/workitem/${workItemId}");
-        sendMessageNotice.setAction(workItem.getTitle());
-        sendMessageNotice.setBaseUrl(baseUrl);
-        sendMessageNotice.setSiteData(msg);
-        sendMessageNotice.setQywechatData(msg);
-        sendMessageNotice.setSendId(createUserId);
-        sendMessageNotice.setAction(oldWorkItem.getTitle());
-        VRoleDomain vRoleDomain = new VRoleDomain();
-        vRoleDomain.setType("workItem");
-        vRoleDomain.setModelId(workItemId);
-        vRoleDomain.setDomainId(projectId);
-        sendMessageNotice.setvRoleDomain(vRoleDomain);
-        sendMessageNoticeService.sendDmMessageNotice(sendMessageNotice);
-//        message.setMessageSendTypeId("site");
+        sendMessageUtil.sendDomainMessage(content, workItem.getProject().getId());
 
-//        sendMessageNoticeService.sendMessage(message);
-//
-//        message.setId(null);
-//        message.setMessageSendTypeId("qywechat");
-//        sendMessageNoticeService.sendMessage(message);
+//        SendMessageNotice sendMessageNotice = new SendMessageNotice();
+//        sendMessageNotice.setId("KANASS_WORKITEM_UPDATESTATUS");
+//        sendMessageNotice.setDomainId(projectId);
+//        sendMessageNotice.setLink("/project/${projectId}/work/${workId}");
+//        sendMessageNotice.setAction(workItem.getTitle());
+//        sendMessageNotice.setBaseUrl(baseUrl);
+//        sendMessageNotice.setSiteData(msg);
+//        sendMessageNotice.setQywechatData(msg);
+//        sendMessageNotice.setEmailData(msg);
+//        sendMessageNotice.setSendId(createUserId);
+//        sendMessageNotice.setAction(oldWorkItem.getTitle());
+//        VRoleDomain vRoleDomain = new VRoleDomain();
+//        vRoleDomain.setType("workItem");
+//        vRoleDomain.setModelId(workItemId);
+//        vRoleDomain.setDomainId(projectId);
+//        sendMessageNotice.setvRoleDomain(vRoleDomain);
+//        sendMessageNoticeService.sendDmMessageNotice(sendMessageNotice);
     }
 
+    /**
+     * 删除事项发送消息
+     * @param workItem
+     * @param receiver
+     */
+    void sendMessageForDelete(WorkItem workItem, User receiver){
+        HashMap<String, Object> content = new HashMap<>();
+        content.put("workItemTitle", workItem.getTitle());
+        content.put("workItemId", workItem.getId());
+        content.put("projectId", workItem.getProject().getId());
+
+        String createUserId = LoginContext.getLoginId();
+        User user = userProcessor.findOne(createUserId);
+        content.put("creater", user.getNickname());
+        content.put("createUserIcon",user.getNickname().substring( 0, 1).toUpperCase());
+        content.put("receiveTime", new SimpleDateFormat("MM-dd").format(new Date()));
+
+        content.put("link", "/project/${projectId}/workitem");
+        content.put("action", "删除事项");
+        content.put("noticeId", "KANASS_WORKITEM_DELETE");
+
+        sendMessageUtil.sendDomainMessage(content, workItem.getProject().getId());
+    }
 
     /**
      * 创建待办
@@ -387,7 +381,7 @@ public class WorkItemServiceImpl implements WorkItemService {
         task.setTodoType(taskType);
 
         String createUserId = LoginContext.getLoginId();
-        User user = userService.findOne(createUserId);
+        User user = userProcessor.findOne(createUserId);
         task.setCreateUser(user);
 
         HashMap<String, Object> content = new HashMap<>();
@@ -426,10 +420,15 @@ public class WorkItemServiceImpl implements WorkItemService {
         taskByTempService.createTask(task);
     }
 
+    /**
+     * 更新待办
+     * @param workItem
+     * @param taskId
+     */
     void updateTodoTask(WorkItem workItem, String taskId){
         Task task = taskService.findOne(taskId);
         String createUserId = LoginContext.getLoginId();
-        User user = userService.findOne(createUserId);
+        User user = userProcessor.findOne(createUserId);
         String updateField = workItem.getUpdateField();
 
         if(updateField.equals("assigner")){
@@ -501,6 +500,11 @@ public class WorkItemServiceImpl implements WorkItemService {
         return stateNode;
     }
 
+    /**
+     * 创建事项与状态节点的关联关系
+     * @param workItem
+     * @param stateNode
+     */
     void createWorkStateNodeRelation(WorkItem workItem, StateNodeFlow stateNode){
         //设置节点跟事项关联
         String id = workItem.getId();
@@ -530,7 +534,7 @@ public class WorkItemServiceImpl implements WorkItemService {
         log.setCreateTime(new Timestamp(System.currentTimeMillis()));
 
         String createUserId = LoginContext.getLoginId();
-        User user = userService.findOne(createUserId);
+        User user = userProcessor.findOne(createUserId);
         log.setUser(user);
 
         logContent.put("workItemTitle", workItem.getTitle());
@@ -545,6 +549,9 @@ public class WorkItemServiceImpl implements WorkItemService {
         }
         if(workItem.getProjectVersion() != null) {
             logContent.put("versionId", workItem.getProjectVersion().getId());
+        }
+        if(workItem.getStage() != null) {
+            logContent.put("stageId", workItem.getStage().getId());
         }
 
         LoggingType opLogType = new LoggingType();
@@ -576,7 +583,7 @@ public class WorkItemServiceImpl implements WorkItemService {
         log.setCreateTime(new Timestamp(System.currentTimeMillis()));
 
         String createUserId = LoginContext.getLoginId();
-        User user = userService.findOne(createUserId);
+        User user = userProcessor.findOne(createUserId);
         log.setUser(user);
 
         Map<String, String> content = new HashMap<>();
@@ -597,6 +604,11 @@ public class WorkItemServiceImpl implements WorkItemService {
         opLogByTemplService.createLog(log);
     }
 
+    /**
+     * 创建事项
+     * @param workItem
+     * @return
+     */
     @Override
     public String createWorkItem(@NotNull @Valid WorkItem workItem) {
         // 设置初始状态
@@ -613,6 +625,12 @@ public class WorkItemServiceImpl implements WorkItemService {
         String code = workTypeDm.getWorkType().getCode();
         workItem.setWorkTypeCode(code);
         workItem.setWorkTypeSys(workTypeDm.getWorkType());
+
+        if (workItem.getBuilder() == null || workItem.getBuilder().getId() == null){
+            User user = new User();
+            user.setId("111111");
+            workItem.setBuilder(user);
+        }
 
         //设置treePath,rootId
         if(workItem.getParentWorkItem() != null){
@@ -655,6 +673,7 @@ public class WorkItemServiceImpl implements WorkItemService {
             selectItemRelationService.createSelectItemRelation(selectItemRelation);
         }
 
+        // 设置默认优先级
         if(workItem.getWorkPriority() != null && workItem.getWorkPriority().getId() != null
                 && workItem.getWorkPriority().getId() != "nullstring" ){
             SelectItemRelation selectItemRelation = new SelectItemRelation();
@@ -702,6 +721,23 @@ public class WorkItemServiceImpl implements WorkItemService {
             }
         }
 
+        //特殊处理，从kanass跳过来创建缺陷传递caseId进行回调绑定
+        if(workItem.getCaseId() != null){
+            JSONObject jsonObject = new JSONObject();
+
+            JSONObject testCase = new JSONObject();
+            testCase.put("id", workItem.getCaseId());
+
+            JSONObject workItemJson = new JSONObject();
+            workItemJson.put("id", id);
+
+            jsonObject.put("workItem", workItemJson);
+            jsonObject.put("testCase", testCase);
+
+            testRepositoryService.createTestHuboBindWorkItem(jsonObject);
+        }
+
+
         WorkItem workItem1 = findWorkItem(id);
         executorService.submit(() -> {
             creatWorkItemDynamic(workItem1);
@@ -712,13 +748,23 @@ public class WorkItemServiceImpl implements WorkItemService {
         return id;
     }
 
+    /**
+     * 用于创建外部导入的事项
+     * @param workItem
+     * @return
+     */
     @Override
-    public String createJiraWorkItem(@NotNull @Valid WorkItem workItem) {
+    public String createImportWorkItem(@NotNull @Valid WorkItem workItem) {
 
         WorkItemEntity workItemEntity = BeanMapper.map(workItem, WorkItemEntity.class);
         String workItemId = workItemDao.createWorkItem(workItemEntity);
         return workItemId;
     }
+
+    /**
+     * 更新事项
+     * @param workItem
+     */
     @Override
     public void updateWorkItem(@NotNull WorkItem workItem) {
         String updateField = workItem.getUpdateField();
@@ -763,6 +809,12 @@ public class WorkItemServiceImpl implements WorkItemService {
             case "preDependWorkItem":
                 updatePreDependWorkItem(workItem);
                 break;
+            case "estimateTime":
+                updateEstimateTime(workItem);
+                break;
+            case "surplusTime":
+                updateSurplusTime(workItem);
+                break;
             default:
                 WorkItemEntity workItemEntity = BeanMapper.map(workItem, WorkItemEntity.class);
                 workItemDao.updateWorkItem(workItemEntity);
@@ -770,12 +822,17 @@ public class WorkItemServiceImpl implements WorkItemService {
         };
     }
 
+
     @Override
     public void updateWork(@NotNull WorkItem workItem){
         WorkItemEntity workItemEntity = BeanMapper.map(workItem, WorkItemEntity.class);
         workItemDao.updateWorkItem(workItemEntity);
     }
 
+    /**
+     * 更新事项标题
+     * @param workItem
+     */
     public void updateTitle(WorkItem workItem){
         WorkItemEntity workItemEntity = BeanMapper.map(workItem, WorkItemEntity.class);
         workItemDao.updateWorkItem(workItemEntity);
@@ -783,8 +840,16 @@ public class WorkItemServiceImpl implements WorkItemService {
         updateFlowRelation(workItem);
         workItem1.setUpdateField(workItem.getUpdateField());
         updateTodoTaskData(workItem1);
+
+        executorService.submit(() -> {
+            sendMessageForUpdate(workItem1, workItem1.getAssigner(), "标题");
+        });
     }
 
+    /**
+     * 更新待办
+     * @param workItem
+     */
     public void updateTodoTaskData(WorkItem workItem) {
         String id = workItem.getId();
         TaskQuery taskQuery = new TaskQuery();
@@ -803,6 +868,10 @@ public class WorkItemServiceImpl implements WorkItemService {
 
     }
 
+    /**
+     * 更新事项迭代
+     * @param workItem
+     */
     public void updateWorkItemListSprint(WorkItem workItem){
         String id = workItem.getId();
         Sprint sprint = workItem.getSprint();
@@ -814,10 +883,19 @@ public class WorkItemServiceImpl implements WorkItemService {
                 workItem1.setUpdateField("sprint");
                 workItem1.setSprint(sprint);
                 updateWorkItemSprint(workItem1);
+
+                executorService.submit(() -> {
+                    sendMessageForUpdate(workItem1, workItem1.getAssigner(), "迭代");
+                });
+
             }
         }
     }
 
+    /**
+     * 更新事项迭代，并更新事项与迭代的关联表
+     * @param workItem
+     */
     public void updateWorkItemSprint(WorkItem workItem){
         WorkItemEntity workItemEntity = BeanMapper.map(workItem, WorkItemEntity.class);
         // 更新事项的迭代
@@ -867,8 +945,17 @@ public class WorkItemServiceImpl implements WorkItemService {
         WorkItem workItem1 = findWorkItem(workItem.getId());
         workItem1.setUpdateField(workItem.getUpdateField());
         updateTodoTaskData(workItem1);
+
+        executorService.submit(() -> {
+            sendMessageForUpdate(workItem1, workItem1.getAssigner(), "迭代");
+        });
+
     }
 
+    /**
+     * 更新事项的版本
+     * @param workItem
+     */
     public void updateWorkItemListVersion(WorkItem workItem){
         String id = workItem.getId();
         ProjectVersion projectVersion = workItem.getProjectVersion();
@@ -880,9 +967,18 @@ public class WorkItemServiceImpl implements WorkItemService {
                 workItem1.setUpdateField("version");
                 workItem1.setProjectVersion(projectVersion);
                 updateWorkItemVersion(workItem1);
+
+                executorService.submit(() -> {
+                    sendMessageForUpdate(workItem1, workItem1.getAssigner(), "版本");
+                });
             }
         }
     }
+
+    /**
+     * 更新事项版本，并更新事项与版本的关联表
+     * @param workItem
+     */
     public void updateWorkItemVersion(WorkItem workItem){
         WorkItemEntity workItemEntity = BeanMapper.map(workItem, WorkItemEntity.class);
         // 更新事项的版本
@@ -930,8 +1026,16 @@ public class WorkItemServiceImpl implements WorkItemService {
         WorkItem workItem1 = findWorkItem(workItem.getId());
         workItem1.setUpdateField(workItem.getUpdateField());
         updateTodoTaskData(workItem1);
+
+        executorService.submit(() -> {
+            sendMessageForUpdate(workItem1, workItem1.getAssigner(), "版本");
+        });
     }
 
+    /**
+     * 更新事项计划时间
+     * @param workItem
+     */
     public void updateWorkItemPlanTime(WorkItem workItem){
         String id = workItem.getId();
         TaskQuery taskQuery = new TaskQuery();
@@ -963,6 +1067,53 @@ public class WorkItemServiceImpl implements WorkItemService {
         workItemDao.updateWorkItem(workItemEntity);
     }
 
+    /**
+     * 更新预估用时
+     * @param workItem
+     */
+    public void updateEstimateTime(WorkItem workItem){
+        String id = workItem.getId();
+        WorkItem oldWorkItem = findWorkItem(id);
+
+        WorkItemEntity workItemEntity = BeanMapper.map(workItem, WorkItemEntity.class);
+        workItemDao.updateWorkItem(workItemEntity);
+
+        WorkItem newWorkItem = findWorkItem(id);
+        // 创建修改动态
+        // todo todoTask、message暂时未创建
+        HashMap<String, Object> logContent = new HashMap<>();
+        if(ObjectUtils.isEmpty(oldWorkItem.getEstimateTime())){
+            logContent.put("oldValue", 0);
+        }else {
+            logContent.put("oldValue", oldWorkItem.getEstimateTime());
+        }
+        logContent.put("newValue", newWorkItem.getEstimateTime());
+        creatUpdateOplog(newWorkItem, logContent, "KANASS_LOGTYPE_WORKUPDATEMESTIMATETIME");
+    }
+
+    public void updateSurplusTime(WorkItem workItem){
+        String id = workItem.getId();
+        WorkItem oldWorkItem = findWorkItem(id);
+
+        WorkItemEntity workItemEntity = BeanMapper.map(workItem, WorkItemEntity.class);
+        workItemDao.updateWorkItem(workItemEntity);
+
+        WorkItem newWorkItem = findWorkItem(id);
+        // 创建修改动态
+        HashMap<String, Object> logContent = new HashMap<>();
+        if(ObjectUtils.isEmpty(oldWorkItem.getSurplusTime())){
+            logContent.put("oldValue", 0);
+        }else {
+            logContent.put("oldValue", oldWorkItem.getEstimateTime());
+        }
+        logContent.put("newValue", newWorkItem.getSurplusTime());
+        creatUpdateOplog(newWorkItem, logContent, "KANASS_LOGTYPE_WORKUPDATESURPLUSTIME");
+    }
+
+    /**
+     * 更新前置事项
+     * @param workItem
+     */
     public void updatePreDependWorkItem(WorkItem workItem){
         // 判断所选事项是否能添加为前置
         String id = workItem.getId();
@@ -973,7 +1124,7 @@ public class WorkItemServiceImpl implements WorkItemService {
             WorkItem preDependWorkItem = findWorkItem(preDependWorkItemId);
             WorkItem workItem1 = findWorkItem(id);
                 if(!preDependWorkItem.getWorkStatusCode().equals("DONE") && !workItem1.getWorkStatusCode().equals("TODO")){
-                throw new SystemException(3001, "当前事项已经开始，所选择前置事项未开始，不可添加为前置事项");
+                throw new SystemException(ErrorCode.DELETE_CODE, "当前事项已经开始，所选择前置事项未开始，不可添加为前置事项");
             }
         }
 
@@ -981,6 +1132,10 @@ public class WorkItemServiceImpl implements WorkItemService {
         workItemDao.updateWorkItem(workItemEntity);
     }
 
+    /**
+     * 更新缺陷类型、需求类型、任务类型
+     * @param workItem
+     */
     public void updateEachType(WorkItem workItem){
         // 添加选项与事项的关联关系
         String eachType = workItem.getEachType();
@@ -1000,6 +1155,10 @@ public class WorkItemServiceImpl implements WorkItemService {
         workItemDao.updateWorkItem(workItemEntity);
     }
 
+    /**
+     * 更新事项优先级
+     * @param workItem
+     */
     public void updateWorkPriority(WorkItem workItem){
         // 添加选项与事项的关联关系
         SelectItem workPriority = workItem.getWorkPriority();
@@ -1018,6 +1177,11 @@ public class WorkItemServiceImpl implements WorkItemService {
         }
         WorkItemEntity workItemEntity = BeanMapper.map(workItem, WorkItemEntity.class);
         workItemDao.updateWorkItem(workItemEntity);
+        WorkItem workItem1 = findWorkItem(workItemEntity.getId());
+        executorService.submit(() -> {
+            sendMessageForUpdate(workItem1, workItem1.getAssigner(), "优先级");
+        });
+
     }
 
     // 更新上级事项
@@ -1036,14 +1200,14 @@ public class WorkItemServiceImpl implements WorkItemService {
             // 判断是否能修改选择的事项为父级
             // 判断上级的状态
             if(parentWorkStatusCode.equals("DONE") && !workStatusCode.equals("DONE")){
-                throw new SystemException(3001, "当前事项未完成，所选择父级已完成，不可添加为父级");
+                throw new SystemException(ErrorCode.DELETE_CODE, "当前事项未完成，所选择父级已完成，不可添加为父级");
             }
 
             // 判断是否能修改选择的事项为父级
             // 判断上级的层级
             Integer childrenLevel = findChildrenLevel(id);
             if(childrenLevel.equals(2)){
-                throw new SystemException(3001, "事项限制为三级，当前事项不能添加父级");
+                throw new SystemException(ErrorCode.DELETE_CODE, "事项限制为三级，当前事项不能添加父级");
             }
             String parentTreePath = parentWorkItem.getTreePath();
             int length =0;
@@ -1053,13 +1217,13 @@ public class WorkItemServiceImpl implements WorkItemService {
             }
             if(childrenLevel.equals(1)){
                if(length > 0){
-                   throw new SystemException(3001, "事项限制为三级，不能添加当前事项为父级");
+                   throw new SystemException(ErrorCode.DELETE_CODE, "事项限制为三级，不能添加当前事项为父级");
                }
             }
 
             if(childrenLevel.equals(0)){
                 if(length > 1){
-                    throw new SystemException(3001, "事项限制为三级，不能添加当前事项为父级");
+                    throw new SystemException(ErrorCode.DELETE_CODE, "事项限制为三级，不能添加当前事项为父级");
                 }
             }
 
@@ -1090,6 +1254,10 @@ public class WorkItemServiceImpl implements WorkItemService {
         workItemDao.updateWorkItem(workItemEntity);
     }
 
+    /**
+     * 更新状态
+     * @param workItem
+     */
     public void updateStatus(WorkItem workItem){
         // 设置状态之后处理前置事项，后置事项，完成时间
 
@@ -1128,15 +1296,34 @@ public class WorkItemServiceImpl implements WorkItemService {
         if(transitionId != null){
             updateByTransitionRule(workItem, oldWorkItem, transitionId);
         }
+
+        // 增加流转记录
+        createWorkTransitionHistory(oldWorkItem, newWorkItem, workItem.getTransitionDesc());
     }
 
+    public void createWorkTransitionHistory(WorkItem oldWorkItem, WorkItem newWorkItem, String transitionDesc) {
+        WorkTransitionHistory workTransitionHistory = new WorkTransitionHistory();
+        workTransitionHistory.setWorkItem(oldWorkItem);
+        workTransitionHistory.setOldNode(oldWorkItem.getWorkStatusNode());
+        workTransitionHistory.setNewNode(newWorkItem.getWorkStatusNode());
+        workTransitionHistory.setCreater(new User(LoginContext.getLoginId()));
+        workTransitionHistory.setTransitionDesc(transitionDesc);
+        workTransitionHistory.setCreateTime(new Date());
+
+        workTransitionHistoryService.createWorkTransitionHistory(workTransitionHistory);
+    }
+
+    /**
+     * 更新负责人
+     * @param workItem
+     */
     public void updateAssigner(WorkItem workItem){
         // 若更新负责人发送待办、消息和更新日志
         String id = workItem.getId();
         WorkItem oldWorkItem = findWorkItem(id);
 
         String assignerId = workItem.getAssigner().getId();
-        User assigner = userService.findOne(assignerId);
+        User assigner = userProcessor.findOne(assignerId);
         WorkItemEntity workItemEntity = BeanMapper.map(workItem, WorkItemEntity.class);
         workItemDao.updateWorkItem(workItemEntity);
 
@@ -1146,7 +1333,10 @@ public class WorkItemServiceImpl implements WorkItemService {
         newWorkItem.setUpdateField("assigner");
         updateTodoTaskData(newWorkItem);
 
-        sendMessageForUpdateAssigner(newWorkItem, assigner);
+        executorService.submit(() -> {
+            sendMessageForUpdate(newWorkItem, assigner, "负责人");
+        });
+
         HashMap<String, Object> logContent = new HashMap<>();
         if(ObjectUtils.isEmpty(oldWorkItem.getAssigner())){
             User user = new User();
@@ -1160,6 +1350,11 @@ public class WorkItemServiceImpl implements WorkItemService {
         creatUpdateOplog(newWorkItem, logContent, "KANASS_LOGTYPE_WORKUPDATEMASTER");
     }
 
+    /**
+     * 更新状态之后更新对应的待办事项
+     * @param workItem
+     * @param oldWorkItem
+     */
     void updateWorkItemStatus(WorkItem workItem, WorkItem oldWorkItem) {
         // 1. 判断子事项是否全部解决完成
         String status = workItem.getWorkStatusNode().getStatus();
@@ -1263,7 +1458,10 @@ public class WorkItemServiceImpl implements WorkItemService {
 //                    creatTodoTask(oldWorkItem, user);
                     newWorkItem.setUpdateField("assigner");
                     updateTodoTaskData(newWorkItem);
-                    sendMessageForUpdateAssigner(oldWorkItem, user);
+                    executorService.submit(() -> {
+                        sendMessageForUpdate(oldWorkItem, user, "负责人");
+                    });
+
                 }
             }
         }
@@ -1285,6 +1483,10 @@ public class WorkItemServiceImpl implements WorkItemService {
         }
     }
 
+    /**
+     * 设置事项与流程的关联关系
+     * @param workItem
+     */
     void setFlowRelation(WorkItem workItem){
         StateNodeRelation stateNodeRelation = new StateNodeRelation();
         StateNodeRelationQuery stateNodeRelationQuery = new StateNodeRelationQuery();
@@ -1310,23 +1512,6 @@ public class WorkItemServiceImpl implements WorkItemService {
         }
 
     }
-    /**
-     * get property value of a object
-     * @param fieldName
-     * @param o
-     * @return
-     */
-    private static Object getFieldValueByName(String fieldName, Object o) {
-        try {
-            String firstLetter = fieldName.substring(0, 1).toUpperCase();
-            String getter = "get" + firstLetter + fieldName.substring(1);
-            Method method = o.getClass().getMethod(getter, new Class[] {});
-            Object value = method.invoke(o, new Object[] {});
-            return value;
-        } catch (Exception e) {
-            throw new ApplicationException(e);
-        }
-    }
 
 
     /**
@@ -1338,6 +1523,10 @@ public class WorkItemServiceImpl implements WorkItemService {
         List<String> workItemAndChildren = workItemDao.findWorkItemAndChildrenIds(id);
 
         String[] workItemIds = workItemAndChildren.toArray(new String[workItemAndChildren.size()]);
+
+        WorkItemQuery workItemDeleteQuery = new WorkItemQuery();
+        workItemDeleteQuery.setIds(workItemIds);
+        List<WorkItem> workItemList = findWorkItemList(workItemDeleteQuery);
 
         // 删除事项与流程的关联关系
         DmFlowQuery dmFlowQuery = new DmFlowQuery();
@@ -1403,6 +1592,12 @@ public class WorkItemServiceImpl implements WorkItemService {
                 taskQuery.setBgroup("kanass");
                 taskService.deleteAllTask(taskQuery);
             }
+            executorService.submit(() -> {
+                for (WorkItem workItem : workItemList) {
+                    sendMessageForDelete(workItem, workItem.getAssigner());
+                }
+
+            });
         }
         catch (Exception e) {
             throw new RuntimeException(e);
@@ -1424,6 +1619,7 @@ public class WorkItemServiceImpl implements WorkItemService {
     }
 
     public void deleteCurrentWorkItem(@NotNull String id) {
+        WorkItem workItem = findWorkItem(id);
         // 删除事项与流程的关联关系
         DmFlowQuery dmFlowQuery = new DmFlowQuery();
         dmFlowQuery.setDomainId(id);
@@ -1495,6 +1691,9 @@ public class WorkItemServiceImpl implements WorkItemService {
             workItemDao.updateWorkItem(workItemAndChild);
         }
 
+        executorService.submit(() -> {
+            sendMessageForDelete(workItem, workItem.getAssigner());
+        });
 
         // 删除产生的待办
         TaskQuery taskQuery = new TaskQuery();
@@ -1506,12 +1705,27 @@ public class WorkItemServiceImpl implements WorkItemService {
     }
 
     public void deleteWorkItemCondition(WorkItemQuery workItemQuery) {
-        DeleteCondition deleteCondition = DeleteBuilders.createDelete(WorkItemEntity.class)
-                .eq("id", workItemQuery.getId())
-                .in("id", workItemQuery.getIds())
-                .in("stageId", workItemQuery.getStageIds())
-                .get();
+        DeleteBuilders deleteBuilders = DeleteBuilders.createDelete(WorkItemEntity.class)
+                .eq("id", workItemQuery.getId());
+
+        if(workItemQuery.getIds() != null && workItemQuery.getIds().length != 0){
+            deleteBuilders.in("id", workItemQuery.getIds());
+        }
+
+        if(workItemQuery.getStageIds() != null && workItemQuery.getStageIds().length != 0){
+            deleteBuilders.in("stageId", workItemQuery.getStageIds());
+        }
+
+//        List<WorkItem> workItemList = findWorkItemList(workItemQuery);
+
+        DeleteCondition deleteCondition = deleteBuilders.get();
         workItemDao.deleteWorkItemList(deleteCondition);
+
+//        executorService.submit(() -> {
+//            for (WorkItem workItem : workItemList) {
+//                sendMessageForDelete(workItem, workItem.getAssigner());
+//            }
+//        });
     }
     @Override
     public WorkItem findOne(String id) {
@@ -1531,41 +1745,140 @@ public class WorkItemServiceImpl implements WorkItemService {
     @Override
     public WorkItem findWorkItem(@NotNull String id) {
         WorkItem workItem = findOne(id);
+        // 可能会遇到work_status_id 和 work_status_node_id 为 default 的情况
+        // 这时去查询当前事项流程对应的的todo状态的信息，并更新
+        this.handleDefaultNodeWorkItem(Stream.of(workItem).collect(Collectors.toList()));
 
-        joinTemplate.joinQuery(workItem);
+        joinTemplate.joinQuery(workItem, new String[]{"parentWorkItem", "preDependWorkItem", "project", "workType", "workTypeSys", "workPriority", "workStatus", "workStatusNode", "module", "sprint", "stage", "projectVersion", "builder", "assigner", "reporter"});
 
         return workItem;
     }
 
+    /**
+     * 处理work_status_id 和 work_status_node_id 为 default 的情况
+     * 1、先更新事项的这两个字段
+     * 2、pcs_flc_state_node_relation表中新增一条TODO的记录
+     * @param list
+     */
+    private void handleDefaultNodeWorkItem(List<WorkItem> list){
+//        List<WorkItem> collect = list.stream().filter(item -> item.getWorkStatus().getId().equals("default") || item.getWorkStatusNode().getId().equals("default")).collect(Collectors.toList());
+//        if (true || collect.isEmpty()){
+//            return;
+//        }
+//
+//        workTypeDmService.findWorkTypeDmListNoRepeat(workTypeDmQuery)
+//        List<String> flowIdList = collect.stream().map(WorkItem::getFlowId).distinct().collect(Collectors.toList());
+//        List<StateNodeFlow> stateNodeFlowList = stateNodeflowService.findList(flowIdList);
+//        Map<String, List<StateNodeFlow>> nodeFlowMap = stateNodeFlowList.stream()
+//                .collect(Collectors.groupingBy(item -> item.getFlow().getId()));
+        for (WorkItem workItem : list) {
+            if (workItem == null){
+                continue;
+            }
+            if (!(workItem.getWorkStatus().getId().equals("default") || workItem.getWorkStatusNode().getId().equals("default"))){
+                continue;
+            }
+            String projectId = workItem.getProject().getId();
+            String workTypeCode = workItem.getWorkTypeCode();
+            WorkTypeDmQuery workTypeDmQuery = new WorkTypeDmQuery();
+            workTypeDmQuery.setProjectId(projectId);
+            List<WorkTypeDm> workTypeDmListNoRepeat = workTypeDmService.findWorkTypeDmListNoRepeat(workTypeDmQuery);
+            String flowId = "";
+            for (WorkTypeDm workTypeDm : workTypeDmListNoRepeat) {
+                if (workTypeDm.getWorkType().getCode().equals(workTypeCode)){
+                    flowId = workTypeDm.getFlow().getId();
+                    break;
+                }
+            }
+            StateNodeFlowQuery stateNodeFlowQuery = new StateNodeFlowQuery();
+            stateNodeFlowQuery.setFlowId(flowId);
+            List<StateNodeFlow> stateNodeFlows = stateNodeflowService.findStateNodeFlowList(stateNodeFlowQuery);
+//            List<StateNodeFlow> stateNodeFlows = nodeFlowMap.get(flowId);
+            List<StateNodeFlow> todo = stateNodeFlows.stream()
+                    .filter(item -> item.getNodeStatus().equals("TODO"))
+                    .collect(Collectors.toList());
+            // 获取第一个
+            StateNodeFlow stateNodeFlow = todo.get(0);
+            WorkItemEntity workItemEntity = BeanMapper.map(workItem, WorkItemEntity.class);
+            workItemEntity.setWorkStatusId(stateNodeFlow.getId());
+            workItemEntity.setWorkStatusNodeId(stateNodeFlow.getNode().getId());
+            workItemDao.updateWorkItem(workItemEntity);
 
+            // 新增记录
+            StateNodeRelation stateNodeRelation = new StateNodeRelation();
+            stateNodeRelation.setWorkId(workItem.getId());
+            stateNodeRelation.setWorkName(workItem.getTitle());
+            stateNodeRelation.setStateNodeId(stateNodeFlow.getId());
+            stateNodeRelation.setNodeId(stateNodeFlow.getNode().getId());
+            stateNodeRelation.setProjectId(workItem.getProject().getId());
+            stateNodeRelation.setFlowId(flowId);
+            stateNodeRelationService.createStateNodeRelation(stateNodeRelation);
+        }
+    }
+
+    /**
+     * 获取事项详情和事项关联过得版本与迭代的列表
+     * @param id
+     * @return
+     */
     @Override
     public WorkItem findWorkItemAndSprintVersion(@NotNull String id) {
+        long time1 = System.currentTimeMillis();
+        logger.info("------------开始------------");
         WorkItem workItem = findWorkItem(id);
+        long time2 = System.currentTimeMillis();
+        logger.info("*********findWorkItem 花费时间:{}----------------",time2-time1);
 
+        this.handleDefaultNodeWorkItem(Stream.of(workItem).collect(Collectors.toList()));
+
+        long time12 = System.currentTimeMillis();
+        logger.info("*********findWorkItem 花费时间:{}----------------",time12-time2);
         String projectId = workItem.getProject().getId();
         Project project = projectService.findProject(projectId);
         workItem.setProject(project);
 
+        long time13 = System.currentTimeMillis();
+        logger.info("*********findWorkItem 花费时间:{}----------------",time13-time12);
+
         List<Sprint> workSprintList = sprintService.findWorkSprintList(id);
         workItem.setSprintList(workSprintList);
+
+        long time3 = System.currentTimeMillis();
+        logger.info("*********findWorkSprintList 花费时间:{}----------------",time3-time13);
 
         List<ProjectVersion> workVersionList = projectVersionService.findWorkVersionList(id);
         workItem.setProjectVersionList(workVersionList);
 
+        long time4 = System.currentTimeMillis();
+        logger.info("*********findWorkVersionList 花费时间:{}----------------",time4-time3);
+
         Integer workItemUsedTime = workLogService.findWorkItemUsedTime(id);
+        long time5 = System.currentTimeMillis();
+        logger.info("*********findWorkItemUsedTime 花费时间:{}----------------",time5-time4);
         if(workItemUsedTime != null){
             workItem.setUsedTime(workItemUsedTime);
         }else {
             workItem.setUsedTime(0);
         }
+        // 计算进度
+        if (workItem.getEstimateTime() != 0 && workItem.getSurplusTime() != 0 ){
+            workItem.setPercent((workItem.getEstimateTime()-workItem.getSurplusTime()) * 100 / workItem.getEstimateTime());
+        }else {
+            workItem.setPercent(0);
+        }
 
         return workItem;
     }
 
+    /**
+     * 根据事项ID查找事项和事项所用时间
+     * @param id
+     * @return
+     */
     @Override
     public WorkItem findWorkItemAndUsedTime(@NotNull String id) {
         WorkItem workItem = findWorkItem(id);
-
+        this.handleDefaultNodeWorkItem(Stream.of(workItem).collect(Collectors.toList()));
         Integer workItemUsedTime = workLogService.findWorkItemUsedTime(id);
         if(workItemUsedTime != null){
             workItem.setUsedTime(workItemUsedTime);
@@ -1574,14 +1887,15 @@ public class WorkItemServiceImpl implements WorkItemService {
         }
         return workItem;
     }
+
 
     @Override
     public List<WorkItem> findAllWorkItem() {
         List<WorkItemEntity> workItemEntityList =  workItemDao.findAllWorkItem();
 
         List<WorkItem> workItemList =  BeanMapper.mapList(workItemEntityList,WorkItem.class);
-
-        joinTemplate.joinQuery(workItemList);
+        this.handleDefaultNodeWorkItem(workItemList);
+        joinTemplate.joinQuery(workItemList, new String[]{"parentWorkItem", "preDependWorkItem", "project", "workType", "workTypeSys", "workPriority", "workStatus", "workStatusNode", "module", "sprint", "stage", "projectVersion", "builder", "assigner", "reporter"});
 
         return workItemList;
     }
@@ -1591,8 +1905,17 @@ public class WorkItemServiceImpl implements WorkItemService {
         List<WorkItemEntity> workItemEntityList = workItemDao.findWorkItemList(workItemQuery);
 
         List<WorkItem> workItemList = BeanMapper.mapList(workItemEntityList,WorkItem.class);
+        this.handleDefaultNodeWorkItem(workItemList);
+        joinTemplate.joinQuery(workItemList, new String[]{"parentWorkItem", "preDependWorkItem", "project", "workType", "workTypeSys", "workPriority", "workStatus", "workStatusNode", "module", "sprint", "stage", "projectVersion", "builder", "assigner", "reporter"});
+        return workItemList;
+    }
 
-        joinTemplate.joinQuery(workItemList);
+    @Override
+    public List<WorkItem> findWorkItemListNoJoinQuery(WorkItemQuery workItemQuery) {
+        List<WorkItemEntity> workItemEntityList = workItemDao.findWorkItemList(workItemQuery);
+
+        List<WorkItem> workItemList = BeanMapper.mapList(workItemEntityList,WorkItem.class);
+        this.handleDefaultNodeWorkItem(workItemList);
         return workItemList;
     }
 
@@ -1603,36 +1926,88 @@ public class WorkItemServiceImpl implements WorkItemService {
         return size;
     }
 
+    /**
+     * 查询子事项的个数
+     * @param workItemQuery
+     * @return
+     */
+    @Override
+    public Integer findWorkChildNum(WorkItemQuery workItemQuery) {
+        Integer size = workItemDao.findWorkChildNum(workItemQuery);
+        return size;
+    }
+
+    /**
+     * 查询用户创建事项和待办事项的个数
+     * @param workItemQuery
+     * @return
+     */
+    @Override
+    public Map<String, Integer> findUserCreateAndTodoWorkNum(WorkItemQuery workItemQuery) {
+        Map<String, Integer> map = new HashMap<>();
+        String builderId = workItemQuery.getBuilderId();
+        // 我创建的
+        Integer count2 = workItemDao.findUserCreateAndTodoWorkNum(workItemQuery);
+        map.put("creat", count2);
+        // 所有
+        workItemQuery.setBuilderId(null);
+        Integer count3 = workItemDao.findUserCreateAndTodoWorkNum(workItemQuery);
+        map.put("all", count3);
+        // 我负责的
+        workItemQuery.setAssignerId(builderId);
+        Integer count4 = workItemDao.findUserCreateAndTodoWorkNum(workItemQuery);
+        map.put("assigner", count4);
+        workItemQuery.setWorkStatusCodes(new ArrayList<>(List.of("TODO", "PROGRESS")));
+        Integer count = workItemDao.findUserCreateAndTodoWorkNum(workItemQuery);
+        map.put("pending", count);
+        // 已逾期
+        workItemQuery.setBuilderId(builderId);
+        workItemQuery.setOverdue(true);
+        Integer count5 = workItemDao.findUserCreateAndTodoWorkNum(workItemQuery);
+        map.put("overdue", count5);
+        return map;
+    }
+
     @Override
     public Pagination<WorkItem> findEpicSelectWorkItemList(WorkItemQuery workItemQuery) {
         //查询所有事项
         Pagination<WorkItemEntity> pagination = workItemDao.findEpicSelectWorkItemList(workItemQuery);
 
         List<WorkItem> workItemList = BeanMapper.mapList(pagination.getDataList(),WorkItem.class);
-
-        joinTemplate.joinQuery(workItemList);
+        this.handleDefaultNodeWorkItem(workItemList);
+        joinTemplate.joinQuery(workItemList, new String[]{"parentWorkItem", "preDependWorkItem", "project", "workType", "workTypeSys", "workPriority", "workStatus", "workStatusNode", "module", "sprint", "stage", "projectVersion", "builder", "assigner", "reporter"});
 
         return PaginationBuilder.build(pagination,workItemList);
     }
 
+    /**
+     * 根据查询对象查找可被添加的子事项列表
+     * @param workItemQuery
+     * @return
+     */
     @Override
     public Pagination<WorkItem> findSelectChildrenWorkItemList(WorkItemQuery workItemQuery) {
         Pagination<WorkItemEntity> pagination = workItemDao.findSelectChildrenWorkItemList(workItemQuery);
 
         List<WorkItem> workItemList = BeanMapper.mapList(pagination.getDataList(),WorkItem.class);
-
-        joinTemplate.joinQuery(workItemList);
+        this.handleDefaultNodeWorkItem(workItemList);
+        joinTemplate.joinQuery(workItemList, new String[]{"parentWorkItem", "preDependWorkItem", "project", "workType", "workTypeSys", "workPriority", "workStatus", "workStatusNode", "module", "sprint", "stage", "projectVersion", "builder", "assigner", "reporter"});
 
         return PaginationBuilder.build(pagination,workItemList);
     }
 
+    /**
+     * 查找事项列表，平铺
+     * @param workItemQuery
+     * @return
+     */
     @Override
     public List<WorkItem> findConditionWorkItemList(WorkItemQuery workItemQuery) {
         List<WorkItemEntity> workItemEntityList = workItemDao.findConditionWorkItemList(workItemQuery);
 
         List<WorkItem> workItemList = BeanMapper.mapList(workItemEntityList,WorkItem.class);
 
-        joinTemplate.joinQuery(workItemList);
+        joinTemplate.joinQuery(workItemList, new String[]{"parentWorkItem", "preDependWorkItem", "project", "workType", "workTypeSys", "workPriority", "workStatus", "workStatusNode", "module", "sprint", "stage", "projectVersion", "builder", "assigner", "reporter"});
         return workItemList;
     }
 
@@ -1641,9 +2016,9 @@ public class WorkItemServiceImpl implements WorkItemService {
         List<WorkItemEntity> workItemEntityList = workItemDao.findWorkItemList(workItemQuery);
 
         List<WorkItem> workItemList = BeanMapper.mapList(workItemEntityList,WorkItem.class);
-
+        this.handleDefaultNodeWorkItem(workItemList);
         if(isJoinQuery){
-            joinTemplate.joinQuery(workItemList);
+            joinTemplate.joinQuery(workItemList, new String[]{"parentWorkItem", "preDependWorkItem", "project", "workType", "workTypeSys", "workPriority", "workStatus", "workStatusNode", "module", "sprint", "stage", "projectVersion", "builder", "assigner", "reporter"});
         }
         return workItemList;
     }
@@ -1654,22 +2029,81 @@ public class WorkItemServiceImpl implements WorkItemService {
         Pagination<WorkItemEntity> pagination = workItemDao.findWorkItemPage(workItemQuery);
 
         List<WorkItem> workItemList = BeanMapper.mapList(pagination.getDataList(),WorkItem.class);
-
-        joinTemplate.joinQuery(workItemList);
+        this.handleDefaultNodeWorkItem(workItemList);
+        joinTemplate.joinQuery(workItemList, new String[]{"parentWorkItem", "preDependWorkItem", "project", "workType", "workTypeSys", "workPriority", "workStatus", "workStatusNode", "module", "sprint", "stage", "projectVersion", "builder", "assigner", "reporter"});
 
         return PaginationBuilder.build(pagination,workItemList);
     }
 
     @Override
+    public Pagination<WorkItem> findConditionWorkItemPageWithChild(WorkItemQuery workItemQuery) {
+        Pagination<WorkItemEntity> pagination = workItemDao.findConditionWorkItemPage(workItemQuery);
+
+        List<WorkItem> workItemList = BeanMapper.mapList(pagination.getDataList(),WorkItem.class);
+        this.handleDefaultNodeWorkItem(workItemList);
+        joinTemplate.joinQuery(workItemList, new String[]{"parentWorkItem", "preDependWorkItem", "project", "workType", "workTypeSys", "workPriority", "workStatus", "workStatusNode", "module", "sprint", "stage", "projectVersion", "builder", "assigner", "reporter"});
+
+        //查询子事项列表
+        List<WorkItem> parentWorkItemList = workItemList.stream().filter(workItem -> workItem.getParentId() == null).collect(Collectors.toList());
+        List<WorkItem> childWorkItemList = findChildWorkItemList(parentWorkItemList);
+        // 处理子事项信息
+        if(childWorkItemList != null && childWorkItemList.size() > 0){
+            for(WorkItem topWorkItem:workItemList){
+                if (topWorkItem.getParentId() == null){
+                    setChildren(childWorkItemList,topWorkItem);
+                }
+            }
+        }
+
+        return PaginationBuilder.build(pagination,workItemList);
+    }
+
+    /**
+     * 安装分页查找事项列表，平铺
+     * @param workItemQuery
+     * @return
+     */
+    @Override
     public Pagination<WorkItem> findConditionWorkItemPage(WorkItemQuery workItemQuery) {
         Pagination<WorkItemEntity> pagination = workItemDao.findConditionWorkItemPage(workItemQuery);
 
         List<WorkItem> workItemList = BeanMapper.mapList(pagination.getDataList(),WorkItem.class);
+        this.handleDefaultNodeWorkItem(workItemList);
+        if (CollectionUtils.isEmpty(workItemList)){
+            return PaginationBuilder.build(pagination, workItemList);
+        }
+//        joinTemplate.joinQuery(workItemList, new String[]{ "project", "workTypeSys", "workPriority", "workStatusNode", "assigner"});
+//        joinTemplate.joinQuery(workItemList, new String[]{"parentWorkItem", "preDependWorkItem", "project", "workType", "workTypeSys", "workPriority", "workStatus", "workStatusNode", "module", "sprint", "stage", "projectVersion", "builder", "assigner", "reporter"});
+        // 获取记录中出现的项目id、事项类型Id、优先级id、事项状态id、负责人id，统一查询出结果后再手动插入到记录中
+        List<String> projectIdList = workItemList.stream().map(workItem -> workItem.getProject().getId()).distinct().collect(Collectors.toList());
+        List<String> workTypeIdList = workItemList.stream().map(workItem -> workItem.getWorkTypeSys().getId()).distinct().collect(Collectors.toList());
+        List<String> workPriorityIdList = workItemList.stream().map(workItem -> workItem.getWorkPriority().getId()).distinct().collect(Collectors.toList());
+        List<String> workStatusNodeIdList = workItemList.stream().map(workItem -> workItem.getWorkStatusNode().getId()).distinct().collect(Collectors.toList());
+        List<String> assignerIdList = workItemList.stream().map(workItem -> workItem.getAssigner().getId()).distinct().collect(Collectors.toList());
 
-        joinTemplate.joinQuery(workItemList);
+        List<Project> projectList = projectService.findList(projectIdList);
+        List<WorkType> workTypeList = workTypeService.findList(workTypeIdList);
+        List<SelectItem> priorityList = selectItemService.findList(workPriorityIdList);
+        List<StateNode> stateNodeList = stateNodeService.findList(workStatusNodeIdList);
+        List<User> userList = userProcessor.findList(assignerIdList);
 
-        return PaginationBuilder.build(pagination,workItemList);
+        Map<String, Project> projectMap = projectList.stream().collect(Collectors.toMap(Project::getId, Function.identity()));
+        Map<String, WorkType> workTypeMap = workTypeList.stream().collect(Collectors.toMap(WorkType::getId, Function.identity()));
+        Map<String, SelectItem> priorityMap = priorityList.stream().collect(Collectors.toMap(SelectItem::getId, Function.identity()));
+        Map<String, StateNode> stateNodeMap = stateNodeList.stream().collect(Collectors.toMap(StateNode::getId, Function.identity()));
+        Map<String, User> userMap = userList.stream().collect(Collectors.toMap(User::getId, Function.identity()));
+
+        for (WorkItem workItem : workItemList) {
+            workItem.setProject(projectMap.get(workItem.getProject().getId()));
+            workItem.setWorkTypeSys(workTypeMap.get(workItem.getWorkTypeSys().getId()));
+            workItem.setWorkPriority(priorityMap.get(workItem.getWorkPriority().getId()));
+            workItem.setWorkStatusNode(stateNodeMap.get(workItem.getWorkStatusNode().getId()));
+            workItem.setAssigner(userMap.get(workItem.getAssigner().getId()));
+        }
+
+        return PaginationBuilder.build(pagination, workItemList);
     }
+
 
     //按条件查找一级节点以及子事项
     @Override
@@ -1677,12 +2111,14 @@ public class WorkItemServiceImpl implements WorkItemService {
         //查找事项列表
         workItemQuery.setParentIdIsNull(true);
         List<WorkItem> workItemList = findWorkItemList(workItemQuery);
+        this.handleDefaultNodeWorkItem(workItemList);
         if(workItemList == null || workItemList.size() == 0){
             return workItemList;
         }
 
         //查询子事项列表
         List<WorkItem> childWorkItemList = findChildWorkItemList(workItemList);
+        this.handleDefaultNodeWorkItem(workItemList);
         //设置子事项
         if(childWorkItemList != null && childWorkItemList.size() > 0){
             for(WorkItem topWorkItem:workItemList){
@@ -1708,6 +2144,7 @@ public class WorkItemServiceImpl implements WorkItemService {
         logger.info("joinQuery cost time1:{}",bTime1-aTime1);
 
         List<WorkItem> topWorkItemList = BeanMapper.mapList(topWorkItemPageEntity.getDataList(), WorkItem.class);
+        this.handleDefaultNodeWorkItem(topWorkItemList);
         long aTime = System.currentTimeMillis();
 
         joinTemplate.joinQuery(topWorkItemList,  new String[]{"project","assigner", "workPriority", "workStatusNode", "workTypeSys", "builder", "module"});
@@ -1741,6 +2178,7 @@ public class WorkItemServiceImpl implements WorkItemService {
             return topWorkItemPageList;
         }else {
             List<WorkItem> workItemList = BeanMapper.mapList(topChildWorkItemEntity,WorkItem.class);
+            this.handleDefaultNodeWorkItem(workItemList);
             long cTime = System.currentTimeMillis();
             joinTemplate.joinQuery(workItemList, new String[]{"project", "assigner", "workPriority", "workStatusNode", "workTypeSys", "builder", "module"});
 //            joinTemplate.joinQuery(workItemList);
@@ -1825,6 +2263,7 @@ public class WorkItemServiceImpl implements WorkItemService {
      */
     @Override
     public List<WorkItem> findChildWorkItemList(List<WorkItem> workItemList){
+        this.handleDefaultNodeWorkItem(workItemList);
         //拼接ids查询范围
         List<String> idList = new ArrayList<>();
         for(WorkItem workItem:workItemList){
@@ -1838,6 +2277,7 @@ public class WorkItemServiceImpl implements WorkItemService {
         workItemQuery.setParentIdIn(ids);
 
         List<WorkItem> childWorkItemList = findWorkItemList(workItemQuery,true);
+
         return childWorkItemList;
     }
 
@@ -1865,6 +2305,11 @@ public class WorkItemServiceImpl implements WorkItemService {
         return childList;
     }
 
+    /**
+     * 根据成员分组查找看板结构的事项列表，暂时没用
+     * @param workItemQuery
+     * @return
+     */
     @Override
     public List<WorkUserGroupBoard> findWorkUserGroupBoardList(WorkItemQuery workItemQuery) {
         ArrayList<WorkUserGroupBoard> workUserGroupBoardArrayList = new ArrayList<>();
@@ -1877,7 +2322,7 @@ public class WorkItemServiceImpl implements WorkItemService {
             for(DmUser dmUser:dmUserList){
                 WorkUserGroupBoard workUserGroupBoard = new WorkUserGroupBoard();
                 String useId = dmUser.getUser().getId();
-                User user = userService.findUser(useId);
+                User user = userProcessor.findUser(useId);
                 workUserGroupBoard.setUser(user);
 
                 List<String> list = new ArrayList<String>();
@@ -1893,26 +2338,35 @@ public class WorkItemServiceImpl implements WorkItemService {
         return workUserGroupBoardArrayList;
     }
 
+    /**
+     * 查找看板状态下的事项列表
+     * @param workItemQuery
+     * @return
+     */
     @Override
     public List<WorkBoard> findWorkBoardList(WorkItemQuery workItemQuery) {
         List<WorkBoard> workBoardList = new ArrayList<>();
         String projectId = workItemQuery.getProjectId();
-        DmFlowQuery dmFlowQuery = new DmFlowQuery();
+        WorkTypeDmQuery workTypeDmQuery = new WorkTypeDmQuery();
+
         if(!StringUtils.isEmpty(projectId) ){
-            dmFlowQuery.setDomainId(projectId);
+            workTypeDmQuery.setProjectId(projectId);
         }
         if(!ObjectUtils.isEmpty(workItemQuery.getProjectIds())){
             List<String> projectIds = workItemQuery.getProjectIds();
             String[] projectIdsString = projectIds.toArray(new String[projectIds.size()]);
-            dmFlowQuery.setDomainIds(projectIdsString);
+            workTypeDmQuery.setProjectIds(projectIdsString);
         }
-        //查找项目下所有的流程
-        List<DmFlow> dmFlowList = dmFlowService.findDmFlowList(dmFlowQuery);
+        if (!StringUtils.isEmpty(workItemQuery.getWorkTypeId())){
+            workTypeDmQuery.setWorkTypeId(workItemQuery.getWorkTypeId());
+        }
+        //查找项目下需要的流程
+        List<WorkTypeDm> workTypeDmListNoRepeat = workTypeDmService.findWorkTypeDmListNoRepeat(workTypeDmQuery);
+        List<Flow> needFlowList = workTypeDmListNoRepeat.stream().map(dm -> dm.getFlow()).collect(Collectors.toList());
         List<StateNodeFlow> stateNodeFlows = new ArrayList<>();
 
         //循环流程查找所有的节点
-        for (DmFlow dmFlow : dmFlowList) {
-            Flow flow = dmFlow.getFlow();
+        for (Flow flow : needFlowList) {
             StateNodeFlowQuery stateNodeFlowQuery = new StateNodeFlowQuery();
             stateNodeFlowQuery.setFlowId(flow.getId());
             List<StateNodeFlow> stateNodeFlowList = stateNodeflowService.findStateNodeFlowList(stateNodeFlowQuery);
@@ -1936,7 +2390,7 @@ public class WorkItemServiceImpl implements WorkItemService {
                     workBoard.setState(stateNode);
 
                     workItemQuery.setWorkStatusId(stateFlowNode.getNode().getId());
-                    Pagination<WorkItem> conditionWorkItemList = this.findConditionWorkItemPage(workItemQuery);
+                    Pagination<WorkItem> conditionWorkItemList = this.findConditionWorkItemPageWithChild(workItemQuery);
                     workBoard.setWorkItemList(conditionWorkItemList);
                     if(workBoard != null){
                         workBoardList.add(workBoard);
@@ -1944,9 +2398,16 @@ public class WorkItemServiceImpl implements WorkItemService {
                 }
             }
         }
+        // 排序  待办在最前  完成在最后
+        workBoardList.sort(Comparator.comparing((WorkBoard workBoard) -> workBoard.getState().getStatus()).reversed());
         return workBoardList;
     }
 
+    /**
+     * 看板分页
+     * @param workItemQuery
+     * @return
+     */
     @Override
     public WorkBoard findChangePageWorkBoardList(WorkItemQuery workItemQuery) {
         WorkBoard workBoard = new WorkBoard();
@@ -1966,86 +2427,138 @@ public class WorkItemServiceImpl implements WorkItemService {
         Pagination<WorkItemEntity>  pagination = workItemDao.findUnEpicWorkItemPage(workItemQuery);
 
         List<WorkItem> workItemList = BeanMapper.mapList(pagination.getDataList(),WorkItem.class);
-
-        joinTemplate.joinQuery(workItemList);
+        this.handleDefaultNodeWorkItem(workItemList);
+        joinTemplate.joinQuery(workItemList, new String[]{"parentWorkItem", "preDependWorkItem", "project", "workType", "workTypeSys", "workPriority", "workStatus", "workStatusNode", "module", "sprint", "stage", "projectVersion", "builder", "assigner", "reporter"});
 
         return PaginationBuilder.build(pagination,workItemList);
     }
 
+    /**
+     * 计划中使用，弃用
+     * @param workItemQuery@return
+     * @return
+     */
     @Override
     public Pagination<WorkItem> findUnPlanWorkItemPage(WorkItemQuery workItemQuery) {
         Pagination<WorkItemEntity>  pagination = workItemDao.findUnPlanWorkItemPage(workItemQuery);
 
         List<WorkItem> workItemList = BeanMapper.mapList(pagination.getDataList(),WorkItem.class);
-
-        joinTemplate.joinQuery(workItemList);
+        this.handleDefaultNodeWorkItem(workItemList);
+        joinTemplate.joinQuery(workItemList, new String[]{"parentWorkItem", "preDependWorkItem", "project", "workType", "workTypeSys", "workPriority", "workStatus", "workStatusNode", "module", "sprint", "stage", "projectVersion", "builder", "assigner", "reporter"});
 
         return PaginationBuilder.build(pagination,workItemList);
     }
 
+    /**
+     * 弃用
+     * @param workItemQuery
+     * @return
+     */
     public List<WorkItem> findPlanWorkItemPage(WorkItemQuery workItemQuery) {
         List<WorkItemEntity> workItemEntityList= workItemDao.findPlanWorkItemPage(workItemQuery);
 
         List<WorkItem> workItemList = BeanMapper.mapList(workItemEntityList,WorkItem.class);
-
-        joinTemplate.joinQuery(workItemList);
+        this.handleDefaultNodeWorkItem(workItemList);
+        joinTemplate.joinQuery(workItemList, new String[]{"parentWorkItem", "preDependWorkItem", "project", "workType", "workTypeSys", "workPriority", "workStatus", "workStatusNode", "module", "sprint", "stage", "projectVersion", "builder", "assigner", "reporter"});
 
         return workItemList;
     }
 
+    /**
+     * 根据标题关键字搜索事项
+     * @param workItemQuery
+     * @return
+     */
     @Override
     public Pagination<WorkItem> findWorkItemByKeyWorks(WorkItemQuery workItemQuery) {
         Pagination<WorkItemEntity> pagination = workItemDao.findWorkItemByKeyWorks(workItemQuery);
 
         List<WorkItem> workItemList = BeanMapper.mapList(pagination.getDataList(),WorkItem.class);
-
+        this.handleDefaultNodeWorkItem(workItemList);
         joinTemplate.joinQuery(workItemList,  new String[]{"project","assigner", "workPriority", "workStatusNode", "workTypeSys"});
         return PaginationBuilder.build(pagination,workItemList);
     }
 
+    /**
+     * 查找各个事项类型下事项的数量，只查第一级
+     * @param workItemQuery
+     * @return
+     */
     @Override
     public HashMap<String, Integer> findWorkItemNumByWorkType(WorkItemQuery workItemQuery) {
         HashMap<String, Integer> workItemNumByWorkType = workItemDao.findWorkItemNumByWorkType(workItemQuery);
         return workItemNumByWorkType;
     }
 
+    /**
+     * 查找各个事项类型下事项的数量，差所有的
+     * @param workItemQuery
+     * @return
+     */
     @Override
     public HashMap<String, Integer> findWorkItemListNumByWorkType(WorkItemQuery workItemQuery) {
         HashMap<String, Integer> workItemNumByWorkType = workItemDao.findWorkItemListNumByWorkType(workItemQuery);
         return workItemNumByWorkType;
     }
 
+    /**
+     * 查找各个状态下事项的个数
+     * @param workItemQuery
+     * @return
+     */
     @Override
     public HashMap<String, Integer> findWorkItemNumByWorkStatus(WorkItemQuery workItemQuery) {
         HashMap<String, Integer> workItemNumByWorkType = workItemDao.findWorkItemNumByWorkStatus(workItemQuery);
         return workItemNumByWorkType;
     }
 
+    /**
+     * 查找我的待办，已完成，已逾期，进行中的事项个数
+     * @param workItemQuery
+     * @return
+     */
     public HashMap<String, Integer> findWorkItemNumByQuickSearch(WorkItemQuery workItemQuery) {
         HashMap<String, Integer> workItemNumByQuickSearch = workItemDao.findWorkItemNumByQuickSearch(workItemQuery);
 
         return  workItemNumByQuickSearch;
     }
 
+    /**
+     * 查找能被设置为上级的事项列表
+     * @param workItemQuery
+     * @return
+     */
     @Override
     public Pagination<WorkItem> findCanBeRelationParentWorkItemList(WorkItemQuery workItemQuery) {
         Pagination<WorkItemEntity> pagination = workItemDao.findCanBeRelationParentWorkItemList(workItemQuery);
         List<WorkItem> workItemList = BeanMapper.mapList(pagination.getDataList(),WorkItem.class);
-
+        this.handleDefaultNodeWorkItem(workItemList);
         joinTemplate.joinQuery(workItemList,  new String[]{"assigner", "workPriority", "workStatusNode", "workTypeSys"});
         return PaginationBuilder.build(pagination,workItemList);
     }
 
+    /**
+     * 查找能被设置为前置事项的事项列表
+     * @param workItemQuery
+     * @return
+     */
     @Override
     public Pagination<WorkItem> findCanBeRelationPerWorkItemList(WorkItemQuery workItemQuery) {
         Pagination<WorkItemEntity> pagination = workItemDao.findCanBeRelationPreWorkItemList(workItemQuery);
         List<WorkItem> workItemList = BeanMapper.mapList(pagination.getDataList(),WorkItem.class);
-
+        this.handleDefaultNodeWorkItem(workItemList);
         joinTemplate.joinQuery(workItemList,  new String[]{"assigner", "workPriority", "workStatusNode", "workTypeSys"});
         return PaginationBuilder.build(pagination,workItemList);
     }
 
 
+    /**
+     * 查找事项关联的各个模型的格式，子事项，子需求，关联事项，评论，动态
+     * 文档这些的个数，用于事项详情页展示
+     * @param workItemId
+     * @param workTypeCode
+     * @return
+     */
     @Override
     public HashMap<String, Integer> findWorkItemRelationModelCount(String workItemId, String workTypeCode) {
         // 查找关联事项个数
@@ -2062,45 +2575,91 @@ public class WorkItemServiceImpl implements WorkItemService {
         return workItemRelationModelCount;
     }
 
-    @Override
-    public List<Map<String, Object>> findWorkItemNum(String colunm, String ids) {
-        List<Map<String, Object>> workItemNum = workItemDao.findWorkItemNum(colunm, ids);
-        return  workItemNum;
-    }
 
+    /**
+     * 批量更新事项的迭代
+     * @param oldSprintId
+     * @param newSprintId
+     */
     @Override
     public void updateBatchWorkItemSprint(String oldSprintId, String newSprintId) {
         workItemDao.updateBatchWorkItemSprint(oldSprintId, newSprintId);
     }
 
+    /**
+     * 批量更新事项的版本
+     * @param oldVersionId
+     * @param newVersionId
+     */
     @Override
     public void updateBatchWorkItemVersion(String oldVersionId, String newVersionId) {
         workItemDao.updateBatchWorkItemVersion(oldVersionId, newVersionId);
     }
 
+    /**
+     * 批量更新事项的版本
+     * @param oldProductPlanId
+     * @param newProductPlanId
+     */
+    @Override
+    public void updateBatchWorkItemProductPlan(String oldProductPlanId, String newProductPlanId) {
+        workItemDao.updateBatchWorkItemProductPlan(oldProductPlanId, newProductPlanId);
+    }
+
+    /**
+     * 根据迭代id查找没有完成的事项列表
+     * @param sprintId
+     * @return
+     */
     @Override
     public List<WorkItem> findSprintWorkItemList(String sprintId) {
         List<WorkItemEntity> sprintWorkItemList = workItemDao.findSprintWorkItemList(sprintId);
 
         List<WorkItem> workItemList = BeanMapper.mapList(sprintWorkItemList,WorkItem.class);
-        joinTemplate.joinQuery(workItemList);
+        this.handleDefaultNodeWorkItem(workItemList);
+        joinTemplate.joinQuery(workItemList, new String[]{"parentWorkItem", "preDependWorkItem", "project", "workType", "workTypeSys", "workPriority", "workStatus", "workStatusNode", "module", "sprint", "stage", "projectVersion", "builder", "assigner", "reporter"});
         return workItemList;
     }
 
+    /**
+     * 根据版本id查找没有完成的事项列表
+     * @param versionId
+     * @return
+     */
     @Override
     public List<WorkItem> findVersionWorkItemList(String versionId) {
         List<WorkItemEntity> versionWorkItemList = workItemDao.findVersionWorkItemList(versionId);
         List<WorkItem> workItemList = BeanMapper.mapList(versionWorkItemList,WorkItem.class);
-        joinTemplate.joinQuery(workItemList);
+        this.handleDefaultNodeWorkItem(workItemList);
+        joinTemplate.joinQuery(workItemList, new String[]{"parentWorkItem", "preDependWorkItem", "project", "workType", "workTypeSys", "workPriority", "workStatus", "workStatusNode", "module", "sprint", "stage", "projectVersion", "builder", "assigner", "reporter"});
         return workItemList;
     }
 
+    @Override
+    public List<WorkItem> findProductPlanWorkItemList(String productPlanId) {
+        List<WorkItemEntity> versionWorkItemList = workItemDao.findProductPlanWorkItemList(productPlanId);
+        List<WorkItem> workItemList = BeanMapper.mapList(versionWorkItemList,WorkItem.class);
+        this.handleDefaultNodeWorkItem(workItemList);
+        joinTemplate.joinQuery(workItemList, new String[]{"parentWorkItem", "preDependWorkItem", "project", "workType", "workTypeSys", "workPriority", "workStatus", "workStatusNode", "module", "sprint", "stage", "projectVersion", "builder", "assigner", "reporter"});
+        return workItemList;
+    }
+
+    /**
+     * 查找迭代下事项的个数
+     * @param sprintId
+     * @return
+     */
     @Override
     public HashMap<String, Integer> findSprintWorkItemNum(String sprintId) {
         HashMap<String, Integer> sprintWorkItemNum = workItemDao.findSprintWorkItemNum(sprintId);
         return sprintWorkItemNum;
     }
 
+    /**
+     * 查找版本下事项的个数
+     * @param versionId
+     * @return
+     */
     @Override
     public HashMap<String, Integer> findVersionWorkItemNum(String versionId) {
         HashMap<String, Integer> versionWorkItemNum = workItemDao.findVersionWorkItemNum(versionId);
@@ -2108,16 +2667,66 @@ public class WorkItemServiceImpl implements WorkItemService {
     }
 
     @Override
+    public HashMap<String, Integer> findProductPlanWorkItemNum(String productPlanId) {
+        HashMap<String, Integer> versionWorkItemNum = workItemDao.findProductPlanWorkItemNum(productPlanId);
+        return versionWorkItemNum;
+    }
+
+    /**
+     * 查找迭代下事项的个数
+     * @param sprintId
+     * @return
+     */
+    @Override
+    public Map<String, Integer> findSprintWorkTime(String sprintId) {
+        Map<String, Integer> result = workItemDao.findSprintWorkTime(sprintId);
+        return result;
+    }
+
+    /**
+     * 查找版本下事项的个数
+     * @param versionId
+     * @return
+     */
+    @Override
+    public Map<String, Integer> findVersionWorkTime(String versionId) {
+        Map<String, Integer> result = workItemDao.findVersionWorkTime(versionId);
+        return result;
+    }
+
+    /**
+     * 查找产品计划下事项的个数
+     * @param versionId
+     * @return
+     */
+    @Override
+    public Map<String, Integer> findProductPlanWorkTime(String productPlanId) {
+        Map<String, Integer> result = workItemDao.findProductPlanWorkTime(productPlanId);
+        return result;
+    }
+
+    /**
+     * 查找当前事项有几层下级事项
+     * @param id
+     * @return
+     */
+    @Override
     public Integer findChildrenLevel(String id) {
         Integer childrenLevel = workItemDao.findChildrenLevel(id);
         return childrenLevel;
     }
+
 
     @Override
     public void updateEpicWork(String projectId, String workTypeId, String dmWorkTypeId){
        workItemDao.updateEpicWork(projectId, workTypeId, dmWorkTypeId);
     }
 
+    /**
+     * 查找事项以及下级事项
+     * @param id
+     * @return
+     */
     public WorkItem findWorkItemAndChidren(String id){
         WorkItem workItem = findWorkItem(id);
         WorkItemQuery workItemQuery = new WorkItemQuery();
@@ -2147,9 +2756,53 @@ public class WorkItemServiceImpl implements WorkItemService {
         return isHave;
     }
 
+    /**
+     * 查找事项的下级事项id
+     * @param workItemId
+     * @return
+     */
     @Override
    public List<String> findWorkItemAndChildrenIds(String workItemId){
        List<String> workItemAndChildrenIds = workItemDao.findWorkItemAndChildrenIds(workItemId);
        return  workItemAndChildrenIds;
    }
+
+    @Override
+    public Map<String, Integer> findTodoPageWorkItemNum(WorkItemQuery workItemQuery) {
+//        // 负责人id
+//        String assignerId = workItemQuery.getAssignerId();
+//        if (workItemQuery.getProjectId() == null
+//                && workItemQuery.getCurrentVersionId() == null
+//                && workItemQuery.getCurrentSprintId() == null){
+//            // 查询所有
+//            findWorkItemListCount(workItemQuery)
+//
+//        }
+//        if (workItemQuery.getProjectId() != null){
+//            // 查询项目下
+//
+//        }
+//        if (workItemQuery.getCurrentVersionId() != null){
+//            // 查询版本下
+//
+//        }
+//        if (workItemQuery.getCurrentSprintId() != null){
+//            // 查询迭代下
+//
+//        }
+        return Map.of();
+    }
+
+    /**
+     *
+     * @param workItemQuery
+     * @return
+     */
+    public Pagination<WorkItem> findUnLinkProductPlanWorkPage(WorkItemQuery workItemQuery){
+        Pagination<WorkItemEntity> pagination = workItemDao.findWorkItemPage(workItemQuery);
+        List<WorkItem> workItemList = BeanMapper.mapList(pagination.getDataList(),WorkItem.class);
+        this.handleDefaultNodeWorkItem(workItemList);
+        joinTemplate.joinQuery(workItemList,  new String[]{"project", "workPriority", "workStatusNode", "workTypeSys"});
+        return PaginationBuilder.build(pagination,workItemList);
+    }
 }

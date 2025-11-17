@@ -52,6 +52,10 @@ public class ProjectEntity implements Serializable {
     @Column(name = "project_set_id",length = 32)
     private String projectSetId;
 
+    //项目集id
+    @Column(name = "product_id",length = 32)
+    private String productId;
+
     //项目状态 1 未开始  2 进行中 3 已完成
     @Column(name = "project_state",length = 32)
     private String  projectState;
@@ -67,6 +71,15 @@ public class ProjectEntity implements Serializable {
     //icon
     @Column(name = "icon_url",length = 64)
     private String iconUrl;
+
+    @Column(name = "color")
+    private int color;
+
+    @Column(name = "create_time")
+    private Date createTime;
+
+    @Column(name = "update_time")
+    private Date updateTime;
 
     public String getId() {
         return id;
@@ -170,5 +183,37 @@ public class ProjectEntity implements Serializable {
 
     public void setCreator(String creator) {
         this.creator = creator;
+    }
+
+    public String getProductId() {
+        return productId;
+    }
+
+    public void setProductId(String productId) {
+        this.productId = productId;
+    }
+
+    public int getColor() {
+        return color;
+    }
+
+    public void setColor(int color) {
+        this.color = color;
+    }
+
+    public Date getCreateTime() {
+        return createTime;
+    }
+
+    public void setCreateTime(Date createTime) {
+        this.createTime = createTime;
+    }
+
+    public Date getUpdateTime() {
+        return updateTime;
+    }
+
+    public void setUpdateTime(Date updateTime) {
+        this.updateTime = updateTime;
     }
 }

@@ -45,6 +45,9 @@ public class WorkItemQuery implements Serializable {
     @ApiProperty(name ="overdue",desc = "是否逾期")
     private Boolean overdue;
 
+    @ApiProperty(name ="workStatus",desc = "事项状态 0待办  1进行中  2已完成")
+    private Integer workStatus;
+
     @ApiProperty(name ="leftJoinPlanWorkItemEntity",desc = "文档id，精确匹配")
     private String leftJoinPlanWorkItemEntity;
 
@@ -176,6 +179,15 @@ public class WorkItemQuery implements Serializable {
 
     @ApiProperty(name ="rootIds",desc = "根节点")
     private List<String> rootIds;
+
+    @ApiProperty(name ="productPlanId",desc = "产品计划ID，精确匹配")
+    private String productPlanId;
+
+    @ApiProperty(name ="productPlanIds",desc = "产品计划ID列表，精确匹配")
+    private List<String> productPlanIds;
+
+    @ApiProperty(name ="productPlanId",desc = "产品计划ID是否为空,true:为空")
+    private Boolean productPlanIdIsNull;
 
     public String getWorkPriorityId() {
         return workPriorityId;
@@ -755,5 +767,37 @@ public class WorkItemQuery implements Serializable {
 
     public void setStageIds(String[] stageIds) {
         this.stageIds = stageIds;
+    }
+
+    public Integer getWorkStatus() {
+        return workStatus;
+    }
+
+    public void setWorkStatus(Integer workStatus) {
+        this.workStatus = workStatus;
+    }
+
+    public String getProductPlanId() {
+        return productPlanId;
+    }
+
+    public void setProductPlanId(String productPlanId) {
+        this.productPlanId = productPlanId;
+    }
+
+    public List<String> getProductPlanIds() {
+        return productPlanIds;
+    }
+
+    public void setProductPlanIds(List<String> productPlanIds) {
+        this.productPlanIds = productPlanIds;
+    }
+
+    public Boolean getProductPlanIdIsNull() {
+        return productPlanIdIsNull;
+    }
+
+    public void setProductPlanIdIsNull(Boolean productPlanIdIsNull) {
+        this.productPlanIdIsNull = productPlanIdIsNull;
     }
 }

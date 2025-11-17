@@ -26,7 +26,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
-* 项目阶段事项服务
+* 项目阶段事项管理关系
 */
 @Service
 public class StageWorkItemServiceImpl implements StageWorkItemService {
@@ -65,12 +65,14 @@ public class StageWorkItemServiceImpl implements StageWorkItemService {
 
     @Override
     public void deleteStageWorkItem(@NotNull @Valid StageWorkItemQuery stageWorkItemQuery) {
-        DeleteCondition deleteCondition = DeleteBuilders.createDelete(StageWorkItemEntity.class)
+        DeleteBuilders deleteBuilders = DeleteBuilders.createDelete(StageWorkItemEntity.class)
                 .eq("stageId", stageWorkItemQuery.getStageId())
-                .eq("workItemId", stageWorkItemQuery.getWorkItemId())
-                .in("stageId", stageWorkItemQuery.getStageIds())
-                .get();
+                .eq("workItemId", stageWorkItemQuery.getWorkItemId());
 
+        if(stageWorkItemQuery.getStageIds() != null && stageWorkItemQuery.getStageIds().length > 0){
+            deleteBuilders.in("stageId", stageWorkItemQuery.getStageIds());
+        }
+        DeleteCondition deleteCondition = deleteBuilders.get();
         stageWorkItemDao.deleteStageWorkItem(deleteCondition);
     }
 
@@ -82,6 +84,11 @@ public class StageWorkItemServiceImpl implements StageWorkItemService {
         return stageWorkItem;
     }
 
+    /**
+     * 查找某个阶段下的子阶段和关联事项
+     * @param stageWorkItemQuery
+     * @return
+     */
     public Map<String, Object> findStageChildWorkItemAndStage(StageWorkItemQuery stageWorkItemQuery) {
         Map<String, Object> workItemAndStage = new HashMap<String, Object>();
         StageQuery stageQuery = new StageQuery();
@@ -126,7 +133,7 @@ public class StageWorkItemServiceImpl implements StageWorkItemService {
     public StageWorkItem findStageWorkItem(@NotNull String id) {
         StageWorkItem stageWorkItem = findOne(id);
 
-        joinTemplate.joinQuery(stageWorkItem);
+        joinTemplate.joinQuery(stageWorkItem, new String[]{"workItem"});
 
         return stageWorkItem;
     }
@@ -137,7 +144,7 @@ public class StageWorkItemServiceImpl implements StageWorkItemService {
 
         List<StageWorkItem> stageWorkItemList =  BeanMapper.mapList(stageWorkItemEntityList,StageWorkItem.class);
 
-        joinTemplate.joinQuery(stageWorkItemList);
+        joinTemplate.joinQuery(stageWorkItemList, new String[]{"workItem"});
 
         return stageWorkItemList;
     }
@@ -148,7 +155,7 @@ public class StageWorkItemServiceImpl implements StageWorkItemService {
 
         List<StageWorkItem> stageWorkItemList = BeanMapper.mapList(stageWorkItemEntityList,StageWorkItem.class);
 
-        joinTemplate.joinQuery(stageWorkItemList);
+        joinTemplate.joinQuery(stageWorkItemList, new String[]{"workItem"});
 
         return stageWorkItemList;
     }
@@ -159,7 +166,7 @@ public class StageWorkItemServiceImpl implements StageWorkItemService {
 
         List<StageWorkItem> stageWorkItemList = BeanMapper.mapList(pagination.getDataList(),StageWorkItem.class);
 
-        joinTemplate.joinQuery(stageWorkItemList);
+        joinTemplate.joinQuery(stageWorkItemList, new String[]{"workItem"});
 
         return PaginationBuilder.build(pagination,stageWorkItemList);
     }
@@ -170,7 +177,7 @@ public class StageWorkItemServiceImpl implements StageWorkItemService {
 
         List<WorkItem> stageWorkItemList = BeanMapper.mapList(workItemEntityList,WorkItem.class);
 
-        joinTemplate.joinQuery(stageWorkItemList);
+        joinTemplate.joinQuery(stageWorkItemList, new String[]{"workItem"});
 
         if(stageWorkItemList == null || stageWorkItemList.size() == 0){
             return stageWorkItemList;

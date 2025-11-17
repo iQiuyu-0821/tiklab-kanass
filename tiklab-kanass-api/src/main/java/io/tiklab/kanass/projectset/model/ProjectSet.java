@@ -9,7 +9,7 @@ import io.tiklab.toolkit.beans.annotation.Mapping;
 import io.tiklab.toolkit.beans.annotation.Mappings;
 import io.tiklab.core.BaseModel;
 import io.tiklab.toolkit.join.annotation.Join;
-import io.tiklab.toolkit.join.annotation.JoinQuery;
+import io.tiklab.toolkit.join.annotation.JoinField;
 import io.tiklab.user.user.model.User;
 
 import java.sql.Date;
@@ -55,7 +55,7 @@ public class ProjectSet extends BaseModel{
     @Mappings({
             @Mapping(source = "master.id",target = "master")
     })
-    @JoinQuery(key = "id")
+    @JoinField(key = "id")
     private User master;
 
     @ApiProperty(name="project_number",desc="项目数量")
@@ -77,6 +77,12 @@ public class ProjectSet extends BaseModel{
 
     @ApiProperty(name = "projectSetLimits", desc="可见范围")
     private String projectSetLimits;
+
+    @ApiProperty(name = "status", desc="项目集状态 0未开始 1进行中 2已结束")
+    private String status;
+
+    @ApiProperty(name = "progress", desc="项目集进度")
+    private Float progress;
 
     public java.lang.String getId() {
         return id;
@@ -191,5 +197,21 @@ public class ProjectSet extends BaseModel{
 
     public void setColor(Integer color) {
         this.color = color;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
+    }
+
+    public Float getProgress() {
+        return progress;
+    }
+
+    public void setProgress(Float progress) {
+        this.progress = progress;
     }
 }

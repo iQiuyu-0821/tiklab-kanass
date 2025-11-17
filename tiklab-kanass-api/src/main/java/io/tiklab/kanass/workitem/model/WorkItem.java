@@ -3,6 +3,7 @@ package io.tiklab.kanass.workitem.model;
 import com.alibaba.fastjson.annotation.JSONField;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import io.tiklab.form.field.model.SelectItem;
+import io.tiklab.kanass.product.plan.model.ProductPlan;
 import io.tiklab.kanass.project.stage.model.Stage;
 import io.tiklab.toolkit.beans.annotation.Mapper;
 import io.tiklab.toolkit.beans.annotation.Mapping;
@@ -11,7 +12,7 @@ import io.tiklab.core.BaseModel;
 import io.tiklab.flow.statenode.model.StateNode;
 import io.tiklab.flow.statenode.model.StateNodeFlow;
 import io.tiklab.toolkit.join.annotation.Join;
-import io.tiklab.toolkit.join.annotation.JoinQuery;
+import io.tiklab.toolkit.join.annotation.JoinField;
 import io.tiklab.postin.annotation.ApiModel;
 import io.tiklab.postin.annotation.ApiProperty;
 import io.tiklab.kanass.project.module.model.Module;
@@ -54,7 +55,7 @@ public class WorkItem extends BaseModel {
     @Mappings({
             @Mapping(source = "parentWorkItem.id",target = "parentId")
     })
-    @JoinQuery(key = "id")
+    @JoinField(key = "id")
     private WorkItem parentWorkItem;
 
     @ApiProperty(name="parentId",desc="上级事项id")
@@ -64,7 +65,7 @@ public class WorkItem extends BaseModel {
     @Mappings({
             @Mapping(source = "preDependWorkItem.id",target = "preDependId")
     })
-    @JoinQuery(key = "id")
+    @JoinField(key = "id")
     private WorkItem preDependWorkItem;
 
     @ApiProperty(name="treePath",desc="所有上级事项按层级排序")
@@ -75,7 +76,7 @@ public class WorkItem extends BaseModel {
     @Mappings({
             @Mapping(source = "project.id",target = "projectId")
     })
-    @JoinQuery(key = "id")
+    @JoinField(key = "id")
     private Project project;
 
     @NotNull
@@ -83,7 +84,7 @@ public class WorkItem extends BaseModel {
     @Mappings({
             @Mapping(source = "workType.id",target = "workTypeId")
     })
-    @JoinQuery(key = "id")
+    @JoinField(key = "id")
     private WorkTypeDm workType;
 
 
@@ -91,7 +92,7 @@ public class WorkItem extends BaseModel {
     @Mappings({
             @Mapping(source = "workTypeSys.id",target = "workTypeSysId")
     })
-    @JoinQuery(key = "id")
+    @JoinField(key = "id")
     private WorkType workTypeSys;
 
     @ApiProperty(name="workTypeCode",desc="事项状态code, DONE, START, PROGRESS")
@@ -102,14 +103,14 @@ public class WorkItem extends BaseModel {
     @Mappings({
             @Mapping(source = "workPriority.id",target = "workPriorityId")
     })
-    @JoinQuery(key = "id")
+    @JoinField(key = "id")
     private SelectItem workPriority;
 
     @ApiProperty(name="workStatus",desc="事项所属项目的状态id")
     @Mappings({
             @Mapping(source = "workStatus.id",target = "workStatusId")
     })
-    @JoinQuery(key = "id")
+    @JoinField(key = "id")
     private StateNodeFlow workStatus;
 
     @ApiProperty(name="workStatusCode",desc="事项状态编码")
@@ -120,28 +121,28 @@ public class WorkItem extends BaseModel {
     @Mappings({
             @Mapping(source = "workStatusNode.id",target = "workStatusNodeId")
     })
-    @JoinQuery(key = "id")
+    @JoinField(key = "id")
     private StateNode workStatusNode;
 
     @ApiProperty(name="module",desc="所属模块")
     @Mappings({
             @Mapping(source = "module.id",target = "moduleId")
     })
-    @JoinQuery(key = "id")
+    @JoinField(key = "id")
     private Module module;
 
     @ApiProperty(name="sprint",desc="所属迭代")
     @Mappings({
             @Mapping(source = "sprint.id",target = "sprintId")
     })
-    @JoinQuery(key = "id")
+    @JoinField(key = "id")
     private Sprint sprint;
 
     @ApiProperty(name="stage",desc="所属计划")
     @Mappings({
             @Mapping(source = "stage.id",target = "stageId")
     })
-    @JoinQuery(key = "id")
+    @JoinField(key = "id")
     private Stage stage;
 
     @ApiProperty(name="sprintList",desc="分配过的迭代")
@@ -154,28 +155,38 @@ public class WorkItem extends BaseModel {
     @Mappings({
             @Mapping(source = "projectVersion.id",target = "versionId")
     })
-    @JoinQuery(key = "id")
+    @JoinField(key = "id")
     private ProjectVersion projectVersion;
+
+    @ApiProperty(name="productPlan",desc="所属产品计划")
+    @Mappings({
+            @Mapping(source = "productPlan.id",target = "productPlanId")
+    })
+    @JoinField(key = "id")
+    private ProductPlan productPlan;
+
+    @ApiProperty(name="productPlanList",desc="分配过的产品计划")
+    private List<ProductPlan> productPlanList;
 
     @ApiProperty(name="builder",desc="创建人")
     @Mappings({
             @Mapping(source = "builder.id",target = "builderId")
     })
-    @JoinQuery(key = "id")
+    @JoinField(key = "id")
     private User builder;
 
     @ApiProperty(name="assigner",desc="经办人")
     @Mappings({
             @Mapping(source = "assigner.id",target = "assignerId")
     })
-    @JoinQuery(key = "id")
+    @JoinField(key = "id")
     private User assigner;
 
     @ApiProperty(name="reporter",desc="报告人")
     @Mappings({
             @Mapping(source = "reporter.id",target = "reporterId")
     })
-    @JoinQuery(key = "id")
+    @JoinField(key = "id")
     private User reporter;
 
     @ApiProperty(name="children",desc="下级事项列表")
@@ -248,6 +259,11 @@ public class WorkItem extends BaseModel {
     )
     private Boolean isRele;
 
+    @ApiProperty(name = "特殊处理，从kanass跳过来创建缺陷传递caseId进行回调绑定")
+    private String caseId;
+
+    @ApiProperty(name = "transitionDesc",desc = "状态转换描述")
+    private String transitionDesc;
 
     public String getId() {
         return id;
@@ -612,5 +628,36 @@ public class WorkItem extends BaseModel {
 
     public void setCode(String code) {
         this.code = code;
+    }
+
+    public String getCaseId() {
+        return caseId;
+    }
+    public void setCaseId(String caseId) {
+        this.caseId = caseId;
+    }
+
+    public ProductPlan getProductPlan() {
+        return productPlan;
+    }
+
+    public void setProductPlan(ProductPlan productPlan) {
+        this.productPlan = productPlan;
+    }
+
+    public List<ProductPlan> getProductPlanList() {
+        return productPlanList;
+    }
+
+    public void setProductPlanList(List<ProductPlan> productPlanList) {
+        this.productPlanList = productPlanList;
+    }
+
+    public String getTransitionDesc() {
+        return transitionDesc;
+    }
+
+    public void setTransitionDesc(String transitionDesc) {
+        this.transitionDesc = transitionDesc;
     }
 }
